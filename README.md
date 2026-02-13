@@ -23,7 +23,7 @@
 
 | Documento                                                                        | Proveedor                       | Hallazgo clave                                                                                                                                                           |
 | -------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [findings-amazon-ses.md](findings-amazon-ses.md)                                 | Amazon SES                      | Contrato existente + experiencia del equipo. Costo mas bajo a escala, integracion AWS nativa, 62K free/mes desde ECS. Requiere 5 DNS changes y pipeline DIY para inbound |
+| [findings-amazon-ses.md](findings-amazon-ses.md)                                 | Amazon SES                      | Contrato existente + experiencia del equipo. Costo mas bajo a escala ($0.10/1K), integracion AWS nativa. Requiere 5 DNS changes y pipeline DIY para inbound |
 | [findings-sendgrid.md](findings-sendgrid.md)                                     | SendGrid (Twilio)               | Contrato existente + experiencia del equipo. Tracking mas completo y maduro, SDK robusto, inbound parse nativo. Sin free tier permanente ($19.95/mes min)                |
 | [findings-google-workspace-gmail-api.md](findings-google-workspace-gmail-api.md) | Gmail API                       | Sin cambios de DNS y costo $0, pero sin tracking nativo y limite de emails/dia                                                                                           |
 | [findings-direct-smtp.md](findings-direct-smtp.md)                               | SMTP Directo + Provider Inbound | Sin cambios de DNS usando SMTP del cliente para outbound + forwarding a provider para inbound.                                                                           |
@@ -42,7 +42,7 @@
 **Opcion A (Recomendada): Amazon SES** - Score 7.8/10
 
 - Experiencia del equipo y contratos vigentes con AWS
-- Costo mas bajo a escala ($0.10/1K, 62K free/mes desde ECS)
+- Costo mas bajo a escala ($0.10/1K, sin suscripcion mensual)
 - Integracion nativa con stack existente (SNS, SQS, S3)
 
 **Opcion B: SendGrid** - Score 7.4/10

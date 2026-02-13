@@ -7,6 +7,7 @@
 > **Fecha de investigación**: 2025 (basado en documentación y pricing actual de SES)
 >
 > **Contexto**: Evaluar SES para una arquitectura **multi-tenant** de email donde:
+>
 > - Se usa el subdominio `ses.omnibrein.com` (dominio propio) con MX apuntando a SES para recepción inbound
 > - Cada tenant (ej: `info@caminosdelassierras.com.ar`) configura forwarding hacia una dirección dedicada en `ses.omnibrein.com` (ej: `caminos@ses.omnibrein.com`)
 > - SES procesa los emails inbound y los envía al backend NestJS/Node.js en AWS (ECS)
@@ -51,13 +52,14 @@ flowchart TD
 
 El registro MX del subdominio debe apuntar al endpoint SMTP inbound de SES para la región elegida:
 
-| Región | Valor del registro MX |
-|---|---|
+| Región    | Valor del registro MX                  |
+| --------- | -------------------------------------- |
 | us-east-1 | `inbound-smtp.us-east-1.amazonaws.com` |
 | us-west-2 | `inbound-smtp.us-west-2.amazonaws.com` |
 | eu-west-1 | `inbound-smtp.eu-west-1.amazonaws.com` |
 
 Registro MX a agregar en el DNS de `omnibrein.com`:
+
 ```
 ses.omnibrein.com    MX    10 inbound-smtp.us-east-1.amazonaws.com
 ```
@@ -71,6 +73,7 @@ Verificar `ses.omnibrein.com` como identidad en SES (vía DKIM o registro TXT). 
 Crear una Receipt Rule para el dominio `ses.omnibrein.com` que aplique a **todas las direcciones** del subdominio. Esto permite agregar nuevos tenants sin modificar las reglas de SES.
 
 **LIMITACIÓN CRÍTICA**: El email inbound de SES solo está disponible en **tres regiones**:
+
 - `us-east-1` (N. Virginia)
 - `us-west-2` (Oregon)
 - `eu-west-1` (Ireland)
@@ -79,18 +82,20 @@ Crear una Receipt Rule para el dominio `ses.omnibrein.com` que aplique a **todas
 
 El tenant (ej: Caminos de las Sierras) debe configurar una regla para copiar/reenviar todos los emails entrantes a su dirección dedicada en `ses.omnibrein.com`. Dependiendo del proveedor de email del tenant:
 
-| Proveedor del tenant | Método de forwarding |
-|---|---|
+| Proveedor del tenant | Método de forwarding                                                     |
+| -------------------- | ------------------------------------------------------------------------ |
 | **Google Workspace** | Routing rule en Admin Console, o filtro de Gmail con "Forward a copy to" |
-| **Microsoft 365** | Transport rule en Exchange Admin Center, o regla de Outlook |
-| **Otro proveedor** | Regla de forwarding equivalente en su panel de administración |
+| **Microsoft 365**    | Transport rule en Exchange Admin Center, o regla de Outlook              |
+| **Otro proveedor**   | Regla de forwarding equivalente en su panel de administración            |
 
 Para el tenant de referencia (Caminos de las Sierras, Google Workspace):
+
 - Configurar en Google Admin Console → Gmail → Routing → **"Add rule"**
 - Condición: emails recibidos en `info@caminosdelassierras.com.ar`
 - Acción: **"Also deliver to"** → `caminos@ses.omnibrein.com`
 
 Esto garantiza que:
+
 - El email original permanece en el buzón del tenant (Google Workspace)
 - Una copia llega a SES para ser procesada por el backend
 
@@ -102,13 +107,14 @@ Cuando Google reenvía un email, el SPF del remitente original puede fallar (por
 
 La arquitectura escala naturalmente a múltiples tenants sin cambios en infraestructura:
 
-| Tenant | Email del tenant | Dirección en ses.omnibrein.com | Forwarding |
-|---|---|---|---|
-| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@ses.omnibrein.com` | Google Workspace routing rule |
-| Tenant B | `contacto@tenantb.com` | `tenantb@ses.omnibrein.com` | Según su proveedor de email |
-| Tenant C | `soporte@tenantc.com.ar` | `tenantc@ses.omnibrein.com` | Según su proveedor de email |
+| Tenant                 | Email del tenant                  | Dirección en ses.omnibrein.com | Forwarding                    |
+| ---------------------- | --------------------------------- | ------------------------------ | ----------------------------- |
+| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@ses.omnibrein.com`    | Google Workspace routing rule |
+| Tenant B               | `contacto@tenantb.com`            | `tenantb@ses.omnibrein.com`    | Según su proveedor de email   |
+| Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@ses.omnibrein.com`    | Según su proveedor de email   |
 
 **Para agregar un nuevo tenant** al sistema inbound:
+
 1. Asignar una dirección única en `ses.omnibrein.com` (ej: `nuevotenantX@ses.omnibrein.com`)
 2. El tenant configura forwarding desde su email hacia esa dirección
 3. La Receipt Rule existente (para todo `ses.omnibrein.com`) ya cubre la nueva dirección automáticamente
@@ -125,6 +131,7 @@ Para outbound (enviar respuestas como `@dominiodelTenant`), sí se requiere veri
 Las Receipt Rules se organizan en **Receipt Rule Sets**. Solo un rule set puede estar **activo** a la vez. Dentro de un rule set, las reglas se evalúan en orden.
 
 Cada Receipt Rule tiene:
+
 - **Recipients**: Direcciones de email o dominios a los que aplica la regla (ej: `ses.omnibrein.com` para aceptar todo el subdominio)
 - **Actions**: Lista ordenada de acciones a ejecutar (hasta varias por regla)
 - **TLS requirement**: Opción de requerir TLS para conexiones inbound
@@ -132,15 +139,15 @@ Cada Receipt Rule tiene:
 
 #### Acciones disponibles
 
-| Acción | Descripción |
-|---|---|
-| **S3 Action** | Almacena el email raw (formato MIME) en un bucket S3. Opcionalmente puede usar un prefijo de key y cifrado KMS. |
-| **SNS Action** | Publica una notificación en un topic de SNS. Puede incluir el contenido completo del email (hasta 150 KB) o solo metadata. |
-| **Lambda Action** | Invoca una función Lambda de forma síncrona o asíncrona. La Lambda recibe el evento del email y puede controlar el flujo de correo (STOP_RULE, STOP_RULE_SET, CONTINUE). |
-| **Bounce Action** | Envía una respuesta bounce al remitente. |
-| **Stop Action** | Detiene el procesamiento de más reglas en el rule set. |
-| **WorkMail Action** | Reenvía a Amazon WorkMail. |
-| **Add Header Action** | Añade un header personalizado al email. |
+| Acción                | Descripción                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S3 Action**         | Almacena el email raw (formato MIME) en un bucket S3. Opcionalmente puede usar un prefijo de key y cifrado KMS.                                                          |
+| **SNS Action**        | Publica una notificación en un topic de SNS. Puede incluir el contenido completo del email (hasta 150 KB) o solo metadata.                                               |
+| **Lambda Action**     | Invoca una función Lambda de forma síncrona o asíncrona. La Lambda recibe el evento del email y puede controlar el flujo de correo (STOP_RULE, STOP_RULE_SET, CONTINUE). |
+| **Bounce Action**     | Envía una respuesta bounce al remitente.                                                                                                                                 |
+| **Stop Action**       | Detiene el procesamiento de más reglas en el rule set.                                                                                                                   |
+| **WorkMail Action**   | Reenvía a Amazon WorkMail.                                                                                                                                               |
+| **Add Header Action** | Añade un header personalizado al email.                                                                                                                                  |
 
 #### Restricciones importantes
 
@@ -158,12 +165,12 @@ La arquitectura requiere configuración DNS en **dos dominios distintos** con re
 
 Estos registros se agregan en el DNS de `omnibrein.com` y están **bajo nuestro control total**. Solo se configuran **una vez** y cubren a todos los tenants.
 
-| # | Tipo | Nombre | Valor | Propósito |
-|---|---|---|---|---|
-| 1 | MX | `ses` | `10 inbound-smtp.us-east-1.amazonaws.com` | SES Inbound - recepción de email |
-| 2 | CNAME | `token1._domainkey.ses` | `token1.dkim.amazonses.com` | DKIM del subdominio (1/3) |
-| 3 | CNAME | `token2._domainkey.ses` | `token2.dkim.amazonses.com` | DKIM del subdominio (2/3) |
-| 4 | CNAME | `token3._domainkey.ses` | `token3.dkim.amazonses.com` | DKIM del subdominio (3/3) |
+| #   | Tipo  | Nombre                  | Valor                                     | Propósito                        |
+| --- | ----- | ----------------------- | ----------------------------------------- | -------------------------------- |
+| 1   | MX    | `ses`                   | `10 inbound-smtp.us-east-1.amazonaws.com` | SES Inbound - recepción de email |
+| 2   | CNAME | `token1._domainkey.ses` | `token1.dkim.amazonses.com`               | DKIM del subdominio (1/3)        |
+| 3   | CNAME | `token2._domainkey.ses` | `token2.dkim.amazonses.com`               | DKIM del subdominio (2/3)        |
+| 4   | CNAME | `token3._domainkey.ses` | `token3.dkim.amazonses.com`               | DKIM del subdominio (3/3)        |
 
 **Total**: 4 registros (1 MX + 3 CNAME DKIM). Se configuran una sola vez.
 
@@ -175,14 +182,14 @@ Estos registros se agregan en el DNS del dominio del tenant y son necesarios **s
 
 Ejemplo para el tenant Caminos de las Sierras (`caminosdelassierras.com.ar`, DNS en Cloudflare):
 
-| # | Tipo | Nombre | Valor | Propósito |
-|---|---|---|---|---|
-| 1 | CNAME | `token1._domainkey.caminosdelassierras.com.ar` | `token1.dkim.amazonses.com` | DKIM (1 de 3) |
-| 2 | CNAME | `token2._domainkey.caminosdelassierras.com.ar` | `token2.dkim.amazonses.com` | DKIM (2 de 3) |
-| 3 | CNAME | `token3._domainkey.caminosdelassierras.com.ar` | `token3.dkim.amazonses.com` | DKIM (3 de 3) |
-| 4 | MX | `mail.caminosdelassierras.com.ar` | `10 feedback-smtp.us-east-1.amazonses.com` | Custom MAIL FROM |
-| 5 | TXT | `mail.caminosdelassierras.com.ar` | `v=spf1 include:amazonses.com ~all` | SPF para MAIL FROM |
-| 6 | TXT (opcional) | `caminosdelassierras.com.ar` | Modificar SPF existente para añadir `include:amazonses.com` | SPF raíz (opcional) |
+| #   | Tipo           | Nombre                                         | Valor                                                       | Propósito           |
+| --- | -------------- | ---------------------------------------------- | ----------------------------------------------------------- | ------------------- |
+| 1   | CNAME          | `token1._domainkey.caminosdelassierras.com.ar` | `token1.dkim.amazonses.com`                                 | DKIM (1 de 3)       |
+| 2   | CNAME          | `token2._domainkey.caminosdelassierras.com.ar` | `token2.dkim.amazonses.com`                                 | DKIM (2 de 3)       |
+| 3   | CNAME          | `token3._domainkey.caminosdelassierras.com.ar` | `token3.dkim.amazonses.com`                                 | DKIM (3 de 3)       |
+| 4   | MX             | `mail.caminosdelassierras.com.ar`              | `10 feedback-smtp.us-east-1.amazonses.com`                  | Custom MAIL FROM    |
+| 5   | TXT            | `mail.caminosdelassierras.com.ar`              | `v=spf1 include:amazonses.com ~all`                         | SPF para MAIL FROM  |
+| 6   | TXT (opcional) | `caminosdelassierras.com.ar`                   | Modificar SPF existente para añadir `include:amazonses.com` | SPF raíz (opcional) |
 
 **Los registros MX existentes del dominio raíz permanecen sin cambios** (Google Workspace: `aspmx.l.google.com`).
 
@@ -192,10 +199,10 @@ Ejemplo para el tenant Caminos de las Sierras (`caminosdelassierras.com.ar`, DNS
 
 #### Resumen: qué necesita cada parte
 
-| Requisito | omnibrein.com (nosotros) | Dominio del tenant |
-|---|---|---|
-| **Para inbound (recibir)** | MX + verificación DKIM de `ses.omnibrein.com` (una sola vez) | Solo regla de forwarding (sin cambios DNS) |
-| **Para outbound (enviar como @tenant)** | N/A | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM (5-6 registros) |
+| Requisito                               | omnibrein.com (nosotros)                                     | Dominio del tenant                                      |
+| --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| **Para inbound (recibir)**              | MX + verificación DKIM de `ses.omnibrein.com` (una sola vez) | Solo regla de forwarding (sin cambios DNS)              |
+| **Para outbound (enviar como @tenant)** | N/A                                                          | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM (5-6 registros) |
 
 ---
 
@@ -206,6 +213,7 @@ Ejemplo para el tenant Caminos de las Sierras (`caminosdelassierras.com.ar`, DNS
 En esta arquitectura, se necesita la cooperación de cada tenant (o de quien gestione su DNS) para añadir los registros DKIM. **Sin acceso al DNS del tenant, SES no puede enviar desde su dominio.**
 
 El proceso de verificación por cada nuevo tenant:
+
 1. Ir a SES Console → Verified Identities → Create Identity
 2. Elegir "Domain" e introducir el dominio del tenant (ej: `caminosdelassierras.com.ar`)
 3. Habilitar Easy DKIM (recomendado: longitud de clave DKIM 2048-bit)
@@ -298,24 +306,25 @@ SES proporciona capacidad completa de email raw vía **API SES v1** (`SendRawEma
 
 SES proporciona tracking extensivo mediante **event notifications**:
 
-| Tipo de evento | Descripción |
-|---|---|
-| **Send** | El email fue aceptado exitosamente por SES para entrega |
-| **Delivery** | SES entregó exitosamente el email al servidor de correo del destinatario |
-| **Bounce** | El email rebotó (hard bounce = permanente, soft bounce = temporal) |
-| **Complaint** | El destinatario marcó el email como spam |
-| **Reject** | SES rechazó el email (ej: virus detectado) |
-| **Open** | El destinatario abrió el email (requiere open tracking habilitado) |
-| **Click** | El destinatario hizo click en un enlace (requiere click tracking habilitado) |
-| **Rendering Failure** | Falló el rendering del template |
-| **Delivery Delay** | Fallo temporal de entrega (aún reintentando) |
-| **Subscription** | Relacionado con gestión de suscripciones de SES |
+| Tipo de evento        | Descripción                                                                  |
+| --------------------- | ---------------------------------------------------------------------------- |
+| **Send**              | El email fue aceptado exitosamente por SES para entrega                      |
+| **Delivery**          | SES entregó exitosamente el email al servidor de correo del destinatario     |
+| **Bounce**            | El email rebotó (hard bounce = permanente, soft bounce = temporal)           |
+| **Complaint**         | El destinatario marcó el email como spam                                     |
+| **Reject**            | SES rechazó el email (ej: virus detectado)                                   |
+| **Open**              | El destinatario abrió el email (requiere open tracking habilitado)           |
+| **Click**             | El destinatario hizo click en un enlace (requiere click tracking habilitado) |
+| **Rendering Failure** | Falló el rendering del template                                              |
+| **Delivery Delay**    | Fallo temporal de entrega (aún reintentando)                                 |
+| **Subscription**      | Relacionado con gestión de suscripciones de SES                              |
 
 ### C2. Configuración de notificaciones SNS
 
 #### Notificaciones a nivel de dominio/identidad (estilo SES v1)
 
 Es posible configurar topics de SNS por identidad para tres tipos de eventos:
+
 - **Bounce notifications** -> SNS Topic A
 - **Complaint notifications** -> SNS Topic B
 - **Delivery notifications** -> SNS Topic C
@@ -329,6 +338,7 @@ Este es el enfoque más moderno y flexible:
 2. **Crear Event Destinations** en el Configuration Set:
 
 Los event destinations pueden enviar a:
+
 - **SNS Topic** (todos los tipos de eventos)
 - **Kinesis Data Firehose** (todos los tipos de eventos, para streaming a S3/Redshift/etc.)
 - **CloudWatch** (métricas basadas en dimensiones)
@@ -361,20 +371,21 @@ Los event destinations pueden enviar a:
 
 SES publica estas métricas a CloudWatch automáticamente:
 
-| Métrica | Descripción |
-|---|---|
-| `Send` | Número de llamadas a la API de envío |
-| `Delivery` | Número de entregas exitosas |
-| `Bounce` | Número de bounces |
-| `Complaint` | Número de complaints |
-| `Reject` | Número de envíos rechazados |
-| `Open` | Número de opens (si tracking habilitado) |
-| `Click` | Número de clicks (si tracking habilitado) |
+| Métrica            | Descripción                                |
+| ------------------ | ------------------------------------------ |
+| `Send`             | Número de llamadas a la API de envío       |
+| `Delivery`         | Número de entregas exitosas                |
+| `Bounce`           | Número de bounces                          |
+| `Complaint`        | Número de complaints                       |
+| `Reject`           | Número de envíos rechazados                |
+| `Open`             | Número de opens (si tracking habilitado)   |
+| `Click`            | Número de clicks (si tracking habilitado)  |
 | `RenderingFailure` | Número de fallos de rendering de templates |
 
 Con **Configuration Sets** que tienen CloudWatch como event destination, es posible añadir dimensiones personalizadas (ej: tenant, campaign, dimension value source desde MESSAGE_TAG, EMAIL_HEADER, o LINK_TAG). Luego es posible crear dashboards y alarmas de CloudWatch basados en estas métricas, segmentados por tenant.
 
 **Métricas a nivel de cuenta SES** (siempre disponibles sin configuration sets):
+
 - Utilización de cuota de envío
 - Tasa de bounce (SES monitorea esto; si supera ~5%, la cuenta puede ponerse en probation)
 - Tasa de complaint (SES monitorea esto; el umbral es ~0.1%)
@@ -382,25 +393,6 @@ Con **Configuration Sets** que tienen CloudWatch como event destination, es posi
 ### C5. Notificaciones de eventos estilo webhook
 
 SES no tiene una función "webhook" nativa, pero se puede lograr comportamiento estilo webhook mediante varios patrones:
-
-```mermaid
-flowchart LR
-    subgraph p1 ["Pattern 1: SNS -> HTTPS"]
-        SES1["SES Event"] --> SNS1["SNS Topic"] --> HTTPS1["HTTPS Subscription
-        your webhook endpoint"]
-    end
-    subgraph p2 ["Pattern 2: SNS -> SQS - Recomendado"]
-        SES2["SES Event"] --> SNS2["SNS Topic"] --> SQS2["SQS Queue"] --> NestJS2["NestJS Backend
-        polls SQS"]
-    end
-    subgraph p3 ["Pattern 3: EventBridge"]
-        SES3["SES Event"] --> EB3["EventBridge"] --> API3["API Destination
-        any HTTP endpoint"]
-    end
-    subgraph p4 ["Pattern 4: Firehose - Analytics"]
-        SES4["SES Event"] --> KF4["Kinesis Firehose"] --> S3R4["S3 / Redshift"]
-    end
-```
 
 - **Pattern 1** (SNS -> HTTPS): SNS puede entregar a un endpoint HTTPS, que es efectivamente un webhook. El backend NestJS expone un endpoint que SNS llama con el payload del evento.
 - **Pattern 2** (SNS -> SQS, recomendado): Más resiliente porque SQS proporciona entrega garantizada, retry y soporte de dead-letter queue.
@@ -417,58 +409,60 @@ El pricing de SES es directo y está entre los más baratos del mercado.
 
 #### Email Outbound (Envío)
 
-| Escenario | Precio |
-|---|---|
-| Envío desde aplicación alojada en EC2 | **$0.00** para los primeros **62,000 emails/mes** (Free Tier) |
-| Más allá del free tier / no-EC2 | **$0.10 por 1,000 emails** ($0.0001 por email) |
-| Adjuntos | **$0.12 por GB** de adjuntos enviados |
+| Escenario                             | Precio                                                        |
+| ------------------------------------- | ------------------------------------------------------------- |
+| Envío (cualquier origen)              | **$0.10 por 1,000 emails** ($0.0001 por email)                |
+| Adjuntos                              | **$0.12 por GB** de adjuntos enviados                         |
 
-**Detalle del Free Tier**: Los 62,000 emails/mes del free tier aplican cuando los emails se envían desde una aplicación alojada en **Amazon EC2** (o servicios que corren en EC2 como ECS, EKS, Elastic Beanstalk, Lambda). Como la empresa corre en ECS, califican.
+> **Cambio en el Free Tier (agosto 2023)**: AWS eliminó el free tier permanente de 62,000 emails/mes desde EC2/ECS. El free tier actual ofrece **3,000 message charges/mes durante los primeros 12 meses** de uso de SES. Después de ese periodo, se paga $0.10/1K desde el primer email. Adicionalmente, desde julio 2025, los nuevos clientes AWS reciben hasta **$200 en créditos** aplicables a SES y otros servicios (válidos por 12 meses). Dado que la empresa ya usa SES/AWS, es probable que el free tier de 12 meses ya haya expirado, por lo que se debe calcular al precio estándar de $0.10/1K.
+>
+> Fuente: <https://aws.amazon.com/ses/pricing/>
 
 #### Email Inbound (Recepción)
 
-| Escenario | Precio |
-|---|---|
-| Primeros 1,000 emails/mes | **Gratis** |
-| Más de 1,000 | **$0.10 por 1,000 emails** |
+| Escenario                             | Precio                     |
+| ------------------------------------- | -------------------------- |
+| Primeros 1,000 emails/mes             | **Gratis**                 |
+| Más de 1,000                          | **$0.10 por 1,000 emails** |
 | Chunks de email entrante (por 256 KB) | **$0.09 por 1,000 chunks** |
 
 **Nota**: "Chunks" significa que cada 256 KB de un email entrante cuenta como un chunk. Un email de 1 KB = 1 chunk. Un email de 300 KB = 2 chunks.
 
 #### Costes adicionales
 
-| Característica | Coste |
-|---|---|
-| **Dedicated IP** | **$24.95/mes por IP** (mínimo 1 IP por región) |
-| **Dedicated IPs (managed)** | **$24.95/mes por IP** con warm-up y escalado automático |
+| Característica                     | Coste                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| **Dedicated IP**                   | **$24.95/mes por IP** (mínimo 1 IP por región)                                  |
+| **Dedicated IPs (managed)**        | **$24.95/mes por IP** con warm-up y escalado automático                         |
 | **Virtual Deliverability Manager** | **$0.07 por 100 emails** (dashboard consultivo para insights de deliverability) |
-| **SES Mailbox Simulator** | Gratis (para testing de bounces, complaints, etc.) |
+| **SES Mailbox Simulator**          | Gratis (para testing de bounces, complaints, etc.)                              |
 
 #### Estimación de coste para un tenant (POC)
 
 Asumiendo:
-- Alojado en ECS (califica para free tier)
+
 - ~500 emails inbound/mes
 - ~500 respuestas outbound/mes
 - Adjuntos pequeños (< 1 GB total)
+- Sin free tier (cuenta AWS existente, free tier de 12 meses ya expirado)
 
-| Ítem | Coste mensual |
-|---|---|
-| Outbound (500 emails, cubierto por free tier) | $0.00 |
-| Inbound (500 emails, cubierto por 1,000 gratis) | $0.00 |
-| Notificaciones SNS | ~$0.00 (SNS primeros 1M requests gratis) |
-| Almacenamiento S3 para emails raw | ~$0.01 |
-| Invocaciones Lambda | ~$0.00 (cubierto por free tier) |
-| **Total** | **~$0.01/mes** |
+| Ítem                                            | Coste mensual                            |
+| ----------------------------------------------- | ---------------------------------------- |
+| Outbound (500 emails a $0.10/1K)                | $0.05                                    |
+| Inbound (500 emails a $0.10/1K)                 | $0.05                                    |
+| Notificaciones SNS                              | ~$0.00 (SNS primeros 1M requests gratis) |
+| Almacenamiento S3 para emails raw               | ~$0.01                                   |
+| **Total**                                       | **~$0.11/mes**                           |
 
 Estimación a mayor escala (10 tenants, 10,000 emails/mes total):
 
-| Ítem | Coste mensual |
-|---|---|
-| Outbound (10,000 emails, 62,000 gratis en EC2) | $0.00 |
-| Inbound (10,000 emails) | $0.90 |
-| Adjuntos (~2 GB) | $0.24 |
-| **Total** | **~$1.14/mes** |
+| Ítem                                           | Coste mensual  |
+| ---------------------------------------------- | -------------- |
+| Outbound (10,000 emails a $0.10/1K)            | $1.00          |
+| Inbound (10,000 emails a $0.10/1K)             | $1.00          |
+| Chunks inbound (~10,000 x 32KB avg)            | ~$0.11         |
+| Adjuntos (~2 GB)                               | $0.24          |
+| **Total**                                      | **~$2.35/mes** |
 
 ---
 
@@ -476,17 +470,17 @@ Estimación a mayor escala (10 tenants, 10,000 emails/mes total):
 
 ### I2. API SES v2 vs API SES v1
 
-| Característica | SES v1 (`@aws-sdk/client-ses`) | SES v2 (`@aws-sdk/client-sesv2`) |
-|---|---|---|
-| Estilo de API | Operaciones más granulares, más antiguas | Operaciones modernas, consolidadas |
-| Enviar email | `SendEmail`, `SendRawEmail`, `SendTemplatedEmail`, `SendBulkTemplatedEmail` | Único `SendEmail` con opciones de tipo de contenido (Simple, Raw, Template) |
-| Configuration sets | Soportado | First-class, más características |
-| Headers personalizados en envíos simples | No soportado (debe usarse `SendRawEmail`) | Soportado vía parámetro `Headers` |
-| Event destinations | SNS, CloudWatch, Kinesis Firehose | SNS, CloudWatch, Kinesis Firehose, **EventBridge**, Pinpoint |
-| Contact lists / gestión de suscripciones | No disponible | Gestión de listas incorporada |
-| Virtual Deliverability Manager | No disponible | Soportado |
-| Verificación de dominio | Registro TXT o DKIM | Basado en DKIM (preferido) |
-| **Recomendación** | Legacy; evitar para proyectos nuevos | **Usar esto para todos los proyectos nuevos** |
+| Característica                           | SES v1 (`@aws-sdk/client-ses`)                                              | SES v2 (`@aws-sdk/client-sesv2`)                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Estilo de API                            | Operaciones más granulares, más antiguas                                    | Operaciones modernas, consolidadas                                          |
+| Enviar email                             | `SendEmail`, `SendRawEmail`, `SendTemplatedEmail`, `SendBulkTemplatedEmail` | Único `SendEmail` con opciones de tipo de contenido (Simple, Raw, Template) |
+| Configuration sets                       | Soportado                                                                   | First-class, más características                                            |
+| Headers personalizados en envíos simples | No soportado (debe usarse `SendRawEmail`)                                   | Soportado vía parámetro `Headers`                                           |
+| Event destinations                       | SNS, CloudWatch, Kinesis Firehose                                           | SNS, CloudWatch, Kinesis Firehose, **EventBridge**, Pinpoint                |
+| Contact lists / gestión de suscripciones | No disponible                                                               | Gestión de listas incorporada                                               |
+| Virtual Deliverability Manager           | No disponible                                                               | Soportado                                                                   |
+| Verificación de dominio                  | Registro TXT o DKIM                                                         | Basado en DKIM (preferido)                                                  |
+| **Recomendación**                        | Legacy; evitar para proyectos nuevos                                        | **Usar esto para todos los proyectos nuevos**                               |
 
 ### I3. Procesamiento de emails inbound
 
@@ -512,18 +506,18 @@ flowchart TD
 
 Dado que la empresa ya usa AWS extensivamente, SES se integra naturalmente:
 
-| Servicio AWS | Integración con SES |
-|---|---|
-| **ECS** | El backend en ECS usa AWS SDK para enviar vía SES. El IAM task role proporciona credenciales. No se necesitan API keys. |
-| **S3** | Almacenar emails raw inbound (organizados por tenant). Almacenar templates de email. Archivar emails enviados. |
-| **SNS** | Recibir notificaciones de eventos SES (bounces, deliveries, opens, clicks). Fan out a múltiples consumidores. |
-| **SQS** | Buffer de procesamiento de email inbound. Desacoplar manejo de eventos. Dead-letter queue para procesamiento fallido. |
-| **Lambda** | Procesar emails inbound. Manejar eventos SES. |
-| **CloudWatch** | Métricas SES por tenant, alarmas en tasas de bounce/complaint, dashboards. |
-| **EventBridge** | Enrutar eventos SES a cualquier servicio AWS con reglas de filtrado. |
-| **IAM** | Permisos granulares para envío (puede restringir a dominios de tenants verificados). |
-| **KMS** | Cifrar emails almacenados en reposo (cifrado server-side S3). |
-| **CloudFormation/CDK** | Soporte completo de IaC para todos los recursos SES. |
+| Servicio AWS           | Integración con SES                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **ECS**                | El backend en ECS usa AWS SDK para enviar vía SES. El IAM task role proporciona credenciales. No se necesitan API keys. |
+| **S3**                 | Almacenar emails raw inbound (organizados por tenant). Almacenar templates de email. Archivar emails enviados.          |
+| **SNS**                | Recibir notificaciones de eventos SES (bounces, deliveries, opens, clicks). Fan out a múltiples consumidores.           |
+| **SQS**                | Buffer de procesamiento de email inbound. Desacoplar manejo de eventos. Dead-letter queue para procesamiento fallido.   |
+| **Lambda**             | Procesar emails inbound. Manejar eventos SES.                                                                           |
+| **CloudWatch**         | Métricas SES por tenant, alarmas en tasas de bounce/complaint, dashboards.                                              |
+| **EventBridge**        | Enrutar eventos SES a cualquier servicio AWS con reglas de filtrado.                                                    |
+| **IAM**                | Permisos granulares para envío (puede restringir a dominios de tenants verificados).                                    |
+| **KMS**                | Cifrar emails almacenados en reposo (cifrado server-side S3).                                                           |
+| **CloudFormation/CDK** | Soporte completo de IaC para todos los recursos SES.                                                                    |
 
 ---
 
@@ -533,14 +527,15 @@ Dado que la empresa ya usa AWS extensivamente, SES se integra naturalmente:
 
 **Toda cuenta SES nueva comienza en modo Sandbox.** Restricciones:
 
-| Restricción | Sandbox | Producción |
-|---|---|---|
-| Enviar a | Solo direcciones de email/dominios verificados | Cualquier destinatario |
-| Enviar desde | Solo identidades verificadas | Solo identidades verificadas |
-| Límite de envío diario | **200 emails/día** | Comienza en 50,000/día (ajustable) |
-| Tasa de envío | **1 email/segundo** | Comienza en 14 emails/segundo (ajustable) |
+| Restricción            | Sandbox                                        | Producción                                |
+| ---------------------- | ---------------------------------------------- | ----------------------------------------- |
+| Enviar a               | Solo direcciones de email/dominios verificados | Cualquier destinatario                    |
+| Enviar desde           | Solo identidades verificadas                   | Solo identidades verificadas              |
+| Límite de envío diario | **200 emails/día**                             | Comienza en 50,000/día (ajustable)        |
+| Tasa de envío          | **1 email/segundo**                            | Comienza en 14 emails/segundo (ajustable) |
 
 **Para salir del Sandbox**: Enviar una solicitud vía AWS Console o Support. Se debe proporcionar:
+
 - El caso de uso
 - Cómo manejas bounces y complaints
 - Volumen de envío esperado
@@ -552,75 +547,25 @@ Dado que la empresa ya usa AWS extensivamente, SES se integra naturalmente:
 
 ### L2. Límites de envío
 
-| Métrica | Por defecto (Producción) | Máximo |
-|---|---|---|
-| Cuota de envío diaria | 50,000 emails/día | Puede aumentarse a millones vía solicitud |
-| Tasa máxima de envío | 14 emails/segundo | Puede aumentarse a cientos/segundo |
-| Tamaño máximo de mensaje | **10 MB** (v1 API) / **40 MB** (v2 API/SMTP), incluyendo adjuntos tras base64 encoding | No puede aumentarse (se recomienda migrar a v2 API) |
-| Máximo de destinatarios por mensaje | 50 | No puede aumentarse |
-| Máximo de llamadas API `SendEmail` | 1 por mensaje | N/A |
+| Métrica                             | Por defecto (Producción)                                                               | Máximo                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Cuota de envío diaria               | 50,000 emails/día                                                                      | Puede aumentarse a millones vía solicitud           |
+| Tasa máxima de envío                | 14 emails/segundo                                                                      | Puede aumentarse a cientos/segundo                  |
+| Tamaño máximo de mensaje            | **10 MB** (v1 API) / **40 MB** (v2 API/SMTP), incluyendo adjuntos tras base64 encoding | No puede aumentarse (se recomienda migrar a v2 API) |
+| Máximo de destinatarios por mensaje | 50                                                                                     | No puede aumentarse                                 |
+| Máximo de llamadas API `SendEmail`  | 1 por mensaje                                                                          | N/A                                                 |
 
 **Aumentos de tasa de envío**: SES aumenta automáticamente los límites con el tiempo si se mantiene buena reputación de envío. También se pueden solicitar aumentos manualmente.
 
 **Nota multi-tenant**: Los límites son **por cuenta AWS**, no por tenant. Si múltiples tenants comparten la misma cuenta SES, los límites se comparten. Es importante monitorear las tasas de bounce/complaint por tenant para evitar que un tenant con mala reputación afecte a los demás.
 
-### L3. Disponibilidad por región
-
-#### SES Sending (Outbound) - Disponible en muchas regiones:
-
-- us-east-1 (N. Virginia)
-- us-east-2 (Ohio)
-- us-west-1 (N. California)
-- us-west-2 (Oregon)
-- af-south-1 (Cape Town)
-- ap-south-1 (Mumbai)
-- ap-northeast-1 (Tokyo)
-- ap-northeast-2 (Seoul)
-- ap-northeast-3 (Osaka)
-- ap-southeast-1 (Singapore)
-- ap-southeast-2 (Sydney)
-- ca-central-1 (Canada)
-- eu-central-1 (Frankfurt)
-- eu-west-1 (Ireland)
-- eu-west-2 (London)
-- eu-west-3 (Paris)
-- eu-north-1 (Stockholm)
-- eu-south-1 (Milan)
-- me-south-1 (Bahrain)
-- sa-east-1 (Sao Paulo)
-- il-central-1 (Tel Aviv)
-
 #### SES Receiving (Inbound) - SOLO 3 regiones:
 
-| Región | Endpoint |
-|---|---|
+| Región                  | Endpoint                               |
+| ----------------------- | -------------------------------------- |
 | us-east-1 (N. Virginia) | `inbound-smtp.us-east-1.amazonaws.com` |
-| us-west-2 (Oregon) | `inbound-smtp.us-west-2.amazonaws.com` |
-| eu-west-1 (Ireland) | `inbound-smtp.eu-west-1.amazonaws.com` |
-
-**Esta es una limitación significativa.** Si la infraestructura AWS principal está en otra región, el procesamiento de email inbound debe estar en una de estas tres regiones, y se necesitará integración cross-region.
-
-### L4. Gotchas con procesamiento de email inbound
-
-1. **Límite de tamaño de mensaje SNS**: Si el email entrante supera **150 KB**, la notificación SNS NO contendrá el contenido del email. Se debe almacenar en S3 primero y obtener desde ahí. Siempre se debe diseñar la arquitectura para manejar ambos caminos.
-
-2. **Sin filtrado de spam incorporado para acciones personalizadas**: SES proporciona escaneo básico de spam/virus (vía SpamAssassin) en receipt rules, pero solo se puede elegir hacer bounce al spam o dejarlo pasar. No hay filtrado sofisticado.
-
-3. **Las receipt rules son regionales**: Si se configura inbound en us-east-1, no se puede acceder a esas receipt rules desde eu-west-1.
-
-4. **Verificación de dominio para recepción**: `ses.omnibrein.com` debe estar verificado en SES para que las receipt rules acepten correo. Esta verificación está bajo nuestro control total.
-
-5. **Sin parsing de email incorporado**: SES entrega contenido MIME raw. Se necesita una librería como `mailparser` para parsearlo a datos estructurados (headers, body, adjuntos).
-
-6. **Los emails reenviados rompen SPF/DKIM del remitente original**: Cuando el tenant reenvía un email desde Google Workspace a `ses.omnibrein.com`, el SPF del remitente original puede fallar (ya que Google está relayando, no el servidor original). DKIM puede sobrevivir si Google no modifica el mensaje. Esto afecta la capacidad de verificar la autenticidad del remitente original pero no bloquea la recepción.
-
-7. **Sin webhook/API de inbound parse como SendGrid**: A diferencia del Inbound Parse de SendGrid (que hace POST de datos de email parseados al webhook), el inbound de SES requiere que se configure el pipeline S3/SNS/SQS. Es más flexible pero requiere más setup.
-
-8. **Preocupaciones de cifrado**: Los emails almacenados en S3 vía receipt rules están sin cifrar por defecto. Se debe habilitar cifrado server-side de S3 (SSE-S3 o SSE-KMS) en el bucket.
-
-9. **Identificación de tenant en inbound**: El backend debe parsear el header `To` del email inbound para identificar a qué tenant pertenece (ej: `caminos@ses.omnibrein.com` → tenant "Caminos de las Sierras"). Se debe mantener un mapeo en base de datos.
-
-10. **Monitoreo de tasa de bounce por tenant**: SES monitorea activamente las tasas de bounce y complaint a nivel de cuenta. Si un tenant genera bounces excesivos (>5%) o complaints (>0.1%), puede afectar a todos los tenants. Es importante monitorear por tenant y tomar acciones preventivas.
+| us-west-2 (Oregon)      | `inbound-smtp.us-west-2.amazonaws.com` |
+| eu-west-1 (Ireland)     | `inbound-smtp.eu-west-1.amazonaws.com` |
 
 ---
 
@@ -651,23 +596,23 @@ flowchart TD
 
 ### Qué necesita el tenant
 
-| Paso | Responsable | Acción | Dependencia DNS |
-|---|---|---|---|
-| Configurar regla de forwarding | Tenant | Crear regla en su proveedor de email | Ninguna |
-| Agregar registros DKIM | Tenant (o admin DNS) | 3 CNAMEs en su DNS | Sí - acceso a DNS |
-| Agregar Custom MAIL FROM | Tenant (o admin DNS) | 1 MX + 1 TXT en su DNS | Sí - acceso a DNS |
-| Verificar en SES | Nosotros | Crear identidad en SES Console | Esperar propagación DNS |
+| Paso                           | Responsable          | Acción                               | Dependencia DNS         |
+| ------------------------------ | -------------------- | ------------------------------------ | ----------------------- |
+| Configurar regla de forwarding | Tenant               | Crear regla en su proveedor de email | Ninguna                 |
+| Agregar registros DKIM         | Tenant (o admin DNS) | 3 CNAMEs en su DNS                   | Sí - acceso a DNS       |
+| Agregar Custom MAIL FROM       | Tenant (o admin DNS) | 1 MX + 1 TXT en su DNS               | Sí - acceso a DNS       |
+| Verificar en SES               | Nosotros             | Crear identidad en SES Console       | Esperar propagación DNS |
 
 ### Qué hacemos nosotros
 
-| Paso | Acción | Frecuencia |
-|---|---|---|
-| Crear dirección `tenantX@ses.omnibrein.com` | Registrar en BD del backend | Por cada nuevo tenant |
-| Iniciar verificación de dominio en SES | SES Console o API | Por cada nuevo tenant |
-| Proporcionar registros DNS al tenant | Extraer de SES y comunicar al tenant | Por cada nuevo tenant |
-| Configurar DNS de `ses.omnibrein.com` | Ya está hecho (MX + DKIM) | **Una sola vez** |
-| Configurar Receipt Rules | Ya está hecho (para todo `ses.omnibrein.com`) | **Una sola vez** |
-| Configurar pipeline S3/SNS/SQS | Ya está hecho | **Una sola vez** |
+| Paso                                        | Acción                                        | Frecuencia            |
+| ------------------------------------------- | --------------------------------------------- | --------------------- |
+| Crear dirección `tenantX@ses.omnibrein.com` | Registrar en BD del backend                   | Por cada nuevo tenant |
+| Iniciar verificación de dominio en SES      | SES Console o API                             | Por cada nuevo tenant |
+| Proporcionar registros DNS al tenant        | Extraer de SES y comunicar al tenant          | Por cada nuevo tenant |
+| Configurar DNS de `ses.omnibrein.com`       | Ya está hecho (MX + DKIM)                     | **Una sola vez**      |
+| Configurar Receipt Rules                    | Ya está hecho (para todo `ses.omnibrein.com`) | **Una sola vez**      |
+| Configurar pipeline S3/SNS/SQS              | Ya está hecho                                 | **Una sola vez**      |
 
 **Ventaja clave**: La infraestructura base (DNS de `ses.omnibrein.com`, Receipt Rules, pipeline S3/SNS/SQS) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
 
@@ -719,22 +664,22 @@ flowchart TD
 
 #### En omnibrein.com (una sola vez, todos los tenants):
 
-| # | Tipo | Nombre | Valor | Propósito |
-|---|---|---|---|---|
-| 1 | MX | `ses` | `10 inbound-smtp.us-east-1.amazonaws.com` | SES Inbound |
-| 2 | CNAME | `token1._domainkey.ses` | `token1.dkim.amazonses.com` | DKIM (1/3) |
-| 3 | CNAME | `token2._domainkey.ses` | `token2.dkim.amazonses.com` | DKIM (2/3) |
-| 4 | CNAME | `token3._domainkey.ses` | `token3.dkim.amazonses.com` | DKIM (3/3) |
+| #   | Tipo  | Nombre                  | Valor                                     | Propósito   |
+| --- | ----- | ----------------------- | ----------------------------------------- | ----------- |
+| 1   | MX    | `ses`                   | `10 inbound-smtp.us-east-1.amazonaws.com` | SES Inbound |
+| 2   | CNAME | `token1._domainkey.ses` | `token1.dkim.amazonses.com`               | DKIM (1/3)  |
+| 3   | CNAME | `token2._domainkey.ses` | `token2.dkim.amazonses.com`               | DKIM (2/3)  |
+| 4   | CNAME | `token3._domainkey.ses` | `token3.dkim.amazonses.com`               | DKIM (3/3)  |
 
 #### En caminosdelassierras.com.ar (por tenant, para outbound):
 
-| # | Tipo | Nombre | Valor | Propósito |
-|---|---|---|---|---|
-| 1 | CNAME | `token1._domainkey` | `token1.dkim.amazonses.com` | SES DKIM (1/3) |
-| 2 | CNAME | `token2._domainkey` | `token2.dkim.amazonses.com` | SES DKIM (2/3) |
-| 3 | CNAME | `token3._domainkey` | `token3.dkim.amazonses.com` | SES DKIM (3/3) |
-| 4 | MX | `mail` | `10 feedback-smtp.us-east-1.amazonses.com` | Custom MAIL FROM |
-| 5 | TXT | `mail` | `v=spf1 include:amazonses.com ~all` | SPF para subdominio MAIL FROM |
+| #   | Tipo  | Nombre              | Valor                                      | Propósito                     |
+| --- | ----- | ------------------- | ------------------------------------------ | ----------------------------- |
+| 1   | CNAME | `token1._domainkey` | `token1.dkim.amazonses.com`                | SES DKIM (1/3)                |
+| 2   | CNAME | `token2._domainkey` | `token2.dkim.amazonses.com`                | SES DKIM (2/3)                |
+| 3   | CNAME | `token3._domainkey` | `token3.dkim.amazonses.com`                | SES DKIM (3/3)                |
+| 4   | MX    | `mail`              | `10 feedback-smtp.us-east-1.amazonses.com` | Custom MAIL FROM              |
+| 5   | TXT   | `mail`              | `v=spf1 include:amazonses.com ~all`        | SPF para subdominio MAIL FROM |
 
 ### Ventajas clave para esta arquitectura
 
@@ -762,82 +707,90 @@ flowchart TD
 
 ## Notas de comparación (vs. otros proveedores en evaluación)
 
-| Característica | Amazon SES | SendGrid | Notas |
-|---|---|---|---|
-| **Inbound parsing** | DIY (S3+SNS+SQS) via `ses.omnibrein.com` | Built-in Inbound Parse webhook | SendGrid más simple para inbound |
-| **Outbound sending** | API/SMTP | API/SMTP | Comparable |
-| **Setup DKIM** | 3 registros CNAME por tenant | 2 registros CNAME por tenant | SES ligeramente más registros DNS |
-| **Gestión de threads** | Manual (control total de headers) | Manual (control total de headers) | Mismo esfuerzo |
-| **Open/Click tracking** | Nativo (config set) | Nativo (incorporado) | Comparable |
-| **Event webhooks** | SNS->SQS/HTTP | Native Event Webhook | SES requiere más plumbing |
-| **Pricing (envío)** | $0.10/1K ($0 en free tier EC2) | $0.35-0.90/1K (según plan) | SES 3-9x más barato |
-| **Pricing (inbound)** | $0.10/1K | Incluido en plan | SES más barato a volumen |
-| **Integración AWS** | Nativa | Third-party | Gran ventaja para SES |
-| **Facilidad de setup** | Media (más DIY) | Fácil (más batteries-included) | SendGrid más rápido para prototipar |
-| **Multi-tenant** | Natural (dominio propio + receipt rules) | Requiere subuser o domain authentication por tenant | SES más flexible para multi-tenant |
-| **Herramientas de deliverability** | Virtual Deliverability Manager ($) | Deliverability insights (depende del plan) | Ambos adecuados |
+| Característica                     | Amazon SES                               | SendGrid                                            | Notas                               |
+| ---------------------------------- | ---------------------------------------- | --------------------------------------------------- | ----------------------------------- |
+| **Inbound parsing**                | DIY (S3+SNS+SQS) via `ses.omnibrein.com` | Built-in Inbound Parse webhook                      | SendGrid más simple para inbound    |
+| **Outbound sending**               | API/SMTP                                 | API/SMTP                                            | Comparable                          |
+| **Setup DKIM**                     | 3 registros CNAME por tenant             | 2 registros CNAME por tenant                        | SES ligeramente más registros DNS   |
+| **Gestión de threads**             | Manual (control total de headers)        | Manual (control total de headers)                   | Mismo esfuerzo                      |
+| **Open/Click tracking**            | Nativo (config set)                      | Nativo (incorporado)                                | Comparable                          |
+| **Event webhooks**                 | SNS->SQS/HTTP                            | Native Event Webhook                                | SES requiere más plumbing           |
+| **Pricing (envío)**                | $0.10/1K (sin free tier permanente)      | $0.35-0.90/1K (según plan)                          | SES 3-9x más barato                 |
+| **Pricing (inbound)**              | $0.10/1K                                 | Incluido en plan                                    | SES más barato a volumen            |
+| **Integración AWS**                | Nativa                                   | Third-party                                         | Gran ventaja para SES               |
+| **Facilidad de setup**             | Media (más DIY)                          | Fácil (más batteries-included)                      | SendGrid más rápido para prototipar |
+| **Multi-tenant**                   | Natural (dominio propio + receipt rules) | Requiere subuser o domain authentication por tenant | SES más flexible para multi-tenant  |
+| **Herramientas de deliverability** | Virtual Deliverability Manager ($)       | Deliverability insights (depende del plan)          | Ambos adecuados                     |
 
 ---
 
 ## Resumen de evaluación
 
-| Criterio | Valoración | Notas |
-|---|---|---|
-| **¿Puede recibir email inbound?** | Sí (via `ses.omnibrein.com`) | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
-| **¿Puede enviar como @tenant?** | Sí (con registros DNS del tenant) | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM = 5 registros DNS en el DNS del tenant |
-| **¿Pasa DMARC p=reject?** | Sí | La alineación DKIM vía Easy DKIM satisface DMARC |
-| **¿Continuidad de thread?** | Sí (manual) | Control total vía headers In-Reply-To/References |
-| **¿Email tracking?** | Sí | Open, click, delivery, bounce, complaint vía Configuration Sets |
-| **¿Multi-tenant?** | Sí (nativo) | Un subdominio, una Receipt Rule, múltiples tenants. Escala sin cambios de infra. |
-| **¿Coste para POC?** | ~$0/mes | El free tier cubre fácilmente el volumen POC |
-| **¿Coste a escala (10 tenants, 10K/mes)?** | ~$1-2/mes | Extremadamente competitivo |
-| **¿Integración con AWS existente?** | Excelente | IAM nativo, SNS, SQS, S3, CloudWatch, EventBridge |
-| **¿Complejidad de setup?** | Media-Alta | Más DIY que SendGrid, pero más flexible |
-| **¿Tiempo a producción?** | 2-4 días | Salida de Sandbox (24-48h) + propagación DNS + desarrollo |
-| **¿Onboarding de nuevo tenant?** | Rápido | Solo registrar en BD + verificar dominio en SES + tenant agrega DNS y forwarding |
+| Criterio                                   | Valoración                        | Notas                                                                                    |
+| ------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------- |
+| **¿Puede recibir email inbound?**          | Sí (via `ses.omnibrein.com`)      | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
+| **¿Puede enviar como @tenant?**            | Sí (con registros DNS del tenant) | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM = 5 registros DNS en el DNS del tenant           |
+| **¿Pasa DMARC p=reject?**                  | Sí                                | La alineación DKIM vía Easy DKIM satisface DMARC                                         |
+| **¿Continuidad de thread?**                | Sí (manual)                       | Control total vía headers In-Reply-To/References                                         |
+| **¿Email tracking?**                       | Sí                                | Open, click, delivery, bounce, complaint vía Configuration Sets                          |
+| **¿Multi-tenant?**                         | Sí (nativo)                       | Un subdominio, una Receipt Rule, múltiples tenants. Escala sin cambios de infra.         |
+| **¿Coste para POC?**                       | ~$0/mes                           | El free tier cubre fácilmente el volumen POC                                             |
+| **¿Coste a escala (10 tenants, 10K/mes)?** | ~$1-2/mes                         | Extremadamente competitivo                                                               |
+| **¿Integración con AWS existente?**        | Excelente                         | IAM nativo, SNS, SQS, S3, CloudWatch, EventBridge                                        |
+| **¿Complejidad de setup?**                 | Media-Alta                        | Más DIY que SendGrid, pero más flexible                                                  |
+| **¿Tiempo a producción?**                  | 2-4 días                          | Salida de Sandbox (24-48h) + propagación DNS + desarrollo                                |
+| **¿Onboarding de nuevo tenant?**           | Rápido                            | Solo registrar en BD + verificar dominio en SES + tenant agrega DNS y forwarding         |
 
 ---
 
 ## Referencias
 
 ### Pricing
+
 - SES Pricing: <https://aws.amazon.com/ses/pricing/>
 - SES FAQs: <https://aws.amazon.com/ses/faqs/>
 
 ### Recepción de email inbound (Receipt Rules)
+
 - Email receiving with Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html>
 - SES email receiving concepts and use cases: <https://docs.aws.amazon.com/ses/latest/dg/receiving-email-concepts.html>
 - Creating receipt rules (console walkthrough): <https://docs.aws.amazon.com/ses/latest/dg/receiving-email-receipt-rules-console-walkthrough.html>
 - ReceiptRule API Reference: <https://docs.aws.amazon.com/ses/latest/APIReference/API_ReceiptRule.html>
 
 ### Verificación de dominio y DKIM
+
 - Verified identities in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/verify-addresses-and-domains.html>
 - Configuring identities in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/configure-identities.html>
 - Easy DKIM in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html>
 - Authenticating email with DKIM in SES: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim.html>
 
 ### SPF y Custom MAIL FROM Domain
+
 - Authenticating email with SPF in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-spf.html>
 - Complying with DMARC in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dmarc.html>
 
 ### Configuration Sets, Event Destinations y Tracking
+
 - Setting up event notifications for SES: <https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity-using-notifications.html>
 - Creating Amazon SES event destinations: <https://docs.aws.amazon.com/ses/latest/dg/event-destinations-manage.html>
 - Set up an Amazon SNS event destination: <https://docs.aws.amazon.com/ses/latest/dg/event-publishing-add-event-destination-sns.html>
 - Create a configuration set: <https://docs.aws.amazon.com/ses/latest/dg/event-publishing-create-configuration-set.html>
 - PutConfigurationSetTrackingOptions (open/click tracking): <https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_PutConfigurationSetTrackingOptions.html>
 
-### Límites de envío, tamanio de mensaje y Sandbox
-- Service quotas in Amazon SES (tamanio max mensaje: 10 MB en v1 API, 40 MB en v2 API/SMTP): <https://docs.aws.amazon.com/ses/latest/dg/quotas.html>
-- Amazon SES V2 supports email size of up to 40MB (anuncio 2022): <https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-ses-v2-supports-email-size-40mb-inbound-outbound-emails-default/>
+### Límites de envío, tamaño de mensaje y Sandbox
+
+- Service quotas in Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/quotas.html>
+- Amazon SES V2 supports email size of up to 40MB: <https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-ses-v2-supports-email-size-40mb-inbound-outbound-emails-default/>
 - Managing your Amazon SES sending limits: <https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas.html>
 - Increasing your SES sending quotas: <https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas-request-increase.html>
 
 ### Disponibilidad por región
+
 - Regions and Amazon SES: <https://docs.aws.amazon.com/ses/latest/dg/regions.html>
 - SES email receiving expands to new regions (anuncio 2023): <https://aws.amazon.com/about-aws/whats-new/2023/09/amazon-ses-email-service-7-regions/>
 
 ### SDK e integración
+
 - `@aws-sdk/client-sesv2` (npm): <https://www.npmjs.com/package/@aws-sdk/client-sesv2>
 - AWS SDK for JavaScript v3 - SESv2 Client: <https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/sesv2>
 - `@aws-sdk/client-ses` (npm, API v1): <https://www.npmjs.com/package/@aws-sdk/client-ses>

@@ -107,15 +107,15 @@
 
 ## Confiabilidad y Deliverability
 
-| Criterio                            | Amazon SES                      | SendGrid                   | Gmail API         | SMTP Directo                      | Brevo                |
-| ----------------------------------- | ------------------------------- | -------------------------- | ----------------- | --------------------------------- | -------------------- |
+| Criterio                            | Amazon SES                      | SendGrid                                 | Gmail API         | SMTP Directo                      | Brevo                |
+| ----------------------------------- | ------------------------------- | ---------------------------------------- | ----------------- | --------------------------------- | -------------------- |
 | **IP dedicada**                     | $24.95/IP/mes                   | Incluida en planes Pro (desde $89.95/mo) | N/A (Google IPs)  | N/A (IPs del cliente)             | Desde plan Business  |
-| **IP compartida**                   | Si (default)                    | Si (planes bajos)          | N/A (Google IPs)  | N/A                               | Si (planes bajos)    |
-| **Reputacion de IPs**               | Alta                            | Alta                       | Muy alta (Google) | Depende del proveedor del cliente | Media-Alta           |
-| **Warmup necesario**                | Si (IP nueva)                   | Si (IP nueva)              | No                | No                                | Si (IP nueva)        |
-| **Bounce rate monitoring**          | Si (automatico, threshold 5%)   | Si                         | No                | No                                | Si                   |
-| **Complaint rate monitoring**       | Si (automatico, threshold 0.1%) | Si                         | No                | No                                | Si                   |
-| **Sandbox/Restricciones iniciales** | Si (sandbox, 200/dia)           | No (envio inmediato)       | No                | No                                | No (envio inmediato) |
+| **IP compartida**                   | Si (default)                    | Si (planes bajos)                        | N/A (Google IPs)  | N/A                               | Si (planes bajos)    |
+| **Reputacion de IPs**               | Alta                            | Alta                                     | Muy alta (Google) | Depende del proveedor del cliente | Media-Alta           |
+| **Warmup necesario**                | Si (IP nueva)                   | Si (IP nueva)                            | No                | No                                | Si (IP nueva)        |
+| **Bounce rate monitoring**          | Si (automatico, threshold 5%)   | Si                                       | No                | No                                | Si                   |
+| **Complaint rate monitoring**       | Si (automatico, threshold 0.1%) | Si                                       | No                | No                                | Si                   |
+| **Sandbox/Restricciones iniciales** | Si (sandbox, 200/dia)           | No (envio inmediato)                     | No                | No                                | No (envio inmediato) |
 
 ---
 
@@ -123,10 +123,10 @@
 
 | Criterio                 | Amazon SES                 | SendGrid                      | Gmail API                                                                             | SMTP Directo                            | Brevo                |
 | ------------------------ | -------------------------- | ----------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------- | -------------------- |
-| **Free tier envio**      | 62,000/mes (desde EC2/ECS) | Trial 60 dias (no permanente) | 2,000/dia/usuario (API/SMTP), hasta 10,000/dia (SMTP Relay)                           | N/A (usa cuota del cliente)             | 300/dia (permanente) |
+| **Free tier envio**      | 3,000 msg charges/mes por 12 meses (luego sin free tier) | Trial 60 dias (no permanente) | 2,000/dia/usuario (API/SMTP), hasta 10,000/dia (SMTP Relay)                           | N/A (usa cuota del cliente)             | 300/dia (permanente) |
 | **Limite maximo diario** | 50,000/dia (ajustable)     | Segun plan                    | 2,000/dia via API (hard cap); hasta 10,000/dia via SMTP Relay (limite fijo de Google) | 2,000-10,000/dia (segun proveedor SMTP) | Segun plan           |
 | **Escalabilidad**        | Muy alta (millones)        | Alta (millones)               | Baja-Media (2,000/dia API; hasta 10,000/dia SMTP Relay)                               | Limitada por SMTP del cliente           | Alta (segun plan)    |
-| **Tamanio max mensaje**  | 10 MB (v1) / 40 MB (v2)   | 30 MB                         | 25 MB (35 MB upload via API)                                                          | 25 MB (Gmail) / 25 MB (M365)            | 4 MB (5 MB total)    |
+| **Tamaño max mensaje**   | 10 MB (v1) / 40 MB (v2)    | 30 MB                         | 25 MB (35 MB upload via API)                                                          | 25 MB (Gmail) / 25 MB (M365)            | 4 MB (5 MB total)    |
 | **Max recipients/msg**   | 50                         | 1,000                         | N/A                                                                                   | Depende del SMTP                        | 99                   |
 
 ---
@@ -135,7 +135,7 @@
 
 ### Amazon SES
 
-- **Fortaleza**: Costo mas bajo a escala ($0.10/1K), integracion AWS nativa, 62K free/mes, **contrato existente y experiencia del equipo**
+- **Fortaleza**: Costo mas bajo a escala ($0.10/1K, sin suscripcion mensual), integracion AWS nativa, **contrato existente y experiencia del equipo**
 - **Debilidad**: Setup inbound requiere pipeline DIY (S3/SNS/SQS), sandbox inicial (24-48h), 5 DNS changes (en subdominios, bajo riesgo)
 
 ### SendGrid
