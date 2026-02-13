@@ -12,12 +12,12 @@
 
 El dominio `caminosdelassierras.com.ar` **ya tiene configuracion parcial con Brevo**:
 
-| Componente | Estado | Registro DNS |
-|---|---|---|
-| Verificacion de dominio | Completado | `brevo-code:2e5dc272262e89f4a55726410d925b25` (TXT) |
-| DKIM | Completado | `mail._domainkey.caminosdelassierras.com.ar` (TXT, RSA 1024-bit) |
-| SPF | **NO configurado** | Falta `include:sendinblue.com` en el registro SPF |
-| DMARC | Existente (no requiere cambio) | `v=DMARC1; p=reject; rua=mailto:noresponder@caminosdelassierras.com.ar` |
+| Componente              | Estado                         | Registro DNS                                                            |
+| ----------------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| Verificacion de dominio | Completado                     | `brevo-code:2e5dc272262e89f4a55726410d925b25` (TXT)                     |
+| DKIM                    | Completado                     | `mail._domainkey.caminosdelassierras.com.ar` (TXT, RSA 1024-bit)        |
+| SPF                     | **NO configurado**             | Falta `include:sendinblue.com` en el registro SPF                       |
+| DMARC                   | Existente (no requiere cambio) | `v=DMARC1; p=reject; rua=mailto:noresponder@caminosdelassierras.com.ar` |
 
 **Esto representa una ventaja significativa**: Brevo es el unico proveedor evaluado que ya tiene 2 de 3 pasos de autenticacion completados. SendGrid, SES y Mailgun requieren configurar todo desde cero.
 
@@ -61,16 +61,16 @@ El dominio `caminosdelassierras.com.ar` **ya tiene configuracion parcial con Bre
 
 **Si, Brevo tiene un equivalente directo al Inbound Parse de SendGrid.**
 
-| Caracteristica | SendGrid Inbound Parse | Brevo Inbound Parsing |
-|---|---|---|
-| Webhook HTTP POST | Si | Si |
-| JSON payload | Si | Si |
-| Headers completos | Si | Si |
-| Adjuntos | Si (multipart) | Si (Base64 o URL) |
-| Texto plano + HTML | Si | Si |
-| Message-ID / In-Reply-To | Si | Si |
-| Configuracion | Via UI o API | Via UI (Settings) |
-| Requiere MX propio | Si (o forwarding) | Si (o forwarding) |
+| Caracteristica           | SendGrid Inbound Parse | Brevo Inbound Parsing |
+| ------------------------ | ---------------------- | --------------------- |
+| Webhook HTTP POST        | Si                     | Si                    |
+| JSON payload             | Si                     | Si                    |
+| Headers completos        | Si                     | Si                    |
+| Adjuntos                 | Si (multipart)         | Si (Base64 o URL)     |
+| Texto plano + HTML       | Si                     | Si                    |
+| Message-ID / In-Reply-To | Si                     | Si                    |
+| Configuracion            | Via UI o API           | Via UI (Settings)     |
+| Requiere MX propio       | Si (o forwarding)      | Si (o forwarding)     |
 
 **Diferencia clave**: El inbound parsing de Brevo es mas sencillo de configurar pero tiene menos opciones de filtrado que SendGrid. Para el caso de uso con forwarding desde Gmail, ambos funcionan de manera equivalente.
 
@@ -79,6 +79,7 @@ El dominio `caminosdelassierras.com.ar` **ya tiene configuracion parcial con Bre
 Dado que el dominio **ya tiene verificacion y DKIM configurados**, lo que falta para enviar es:
 
 1. **Agregar SPF** (unico paso DNS restante):
+
    ```
    v=spf1 include:_spf.google.com include:sendinblue.com ~all
    ```
@@ -94,27 +95,30 @@ Dado que el dominio **ya tiene verificacion y DKIM configurados**, lo que falta 
 
 **Resumen de gaps para envio completo**:
 
-| Paso | Estado | Accion requerida |
-|---|---|---|
-| Verificacion de dominio en Brevo | Completado | Ninguna |
-| DKIM configurado | Completado | Ninguna |
-| SPF configurado | **Pendiente** | Agregar `include:sendinblue.com` al registro SPF |
-| Sender verificado | **Pendiente** | Agregar sender en consola Brevo |
-| API key generada | **Pendiente** | Generar en Settings > API Keys |
+| Paso                             | Estado        | Accion requerida                                 |
+| -------------------------------- | ------------- | ------------------------------------------------ |
+| Verificacion de dominio en Brevo | Completado    | Ninguna                                          |
+| DKIM configurado                 | Completado    | Ninguna                                          |
+| SPF configurado                  | **Pendiente** | Agregar `include:sendinblue.com` al registro SPF |
+| Sender verificado                | **Pendiente** | Agregar sender en consola Brevo                  |
+| API key generada                 | **Pendiente** | Generar en Settings > API Keys                   |
 
 ### A4. Configuracion SPF Requerida
 
 **Registro SPF actual**:
+
 ```
 v=spf1 include:_spf.google.com ~all
 ```
 
 **Registro SPF necesario**:
+
 ```
 v=spf1 include:_spf.google.com include:sendinblue.com ~all
 ```
 
 **Notas**:
+
 - Brevo usa `sendinblue.com` para SPF (no `brevo.com`) - esto es legacy del rebrandeo y sigue vigente
 - Solo se agrega un `include` adicional, no afecta el email existente de Google Workspace
 - El cambio se hace en Cloudflare, en el registro TXT del dominio raiz
@@ -125,9 +129,10 @@ v=spf1 include:_spf.google.com include:sendinblue.com ~all
 **Si, Brevo permite control total del Reply-To.**
 
 Opciones de Reply-To:
+
 - **Mismo sender**: `replyTo` = `sender` (el cliente responde a info@caminosdelassierras.com.ar)
 - **Direccion de inbound**: `replyTo` apunta a una casilla que Brevo monitorea para inbound parsing
-- **Direccion del backend**: `replyTo` puede apuntar a un alias que tu backend procesa
+- **Direccion del backend**: `replyTo` puede apuntar a un alias que el backend procesa
 
 **Para el flujo planteado**, lo ideal es que el Reply-To sea `info@caminosdelassierras.com.ar` asi el cliente responde ahi, Google Workspace lo recibe, y el forwarding lo envia a Brevo inbound.
 
@@ -136,19 +141,21 @@ Opciones de Reply-To:
 **Analisis critico dado DMARC p=reject**:
 
 DMARC requiere que pase **al menos uno** de:
+
 - SPF alineado (el dominio del Return-Path coincide con el From)
 - DKIM alineado (el dominio de la firma DKIM coincide con el From)
 
 **Situacion actual (sin agregar SPF)**:
 
-| Check | Resultado | Detalle |
-|---|---|---|
-| SPF | FAIL | Brevo no esta en el SPF actual |
-| DKIM | **PASS** | `mail._domainkey.caminosdelassierras.com.ar` ya esta configurado |
-| DMARC (alineacion) | **PASS** | Porque DKIM pasa y esta alineado con el dominio |
-| Entrega | **Deberia funcionar** | DMARC pasa por DKIM aunque SPF falle |
+| Check              | Resultado             | Detalle                                                          |
+| ------------------ | --------------------- | ---------------------------------------------------------------- |
+| SPF                | FAIL                  | Brevo no esta en el SPF actual                                   |
+| DKIM               | **PASS**              | `mail._domainkey.caminosdelassierras.com.ar` ya esta configurado |
+| DMARC (alineacion) | **PASS**              | Porque DKIM pasa y esta alineado con el dominio                  |
+| Entrega            | **Deberia funcionar** | DMARC pasa por DKIM aunque SPF falle                             |
 
 **IMPORTANTE**: Aunque tecnicamente los emails podrian entregarse solo con DKIM (ya que DMARC requiere solo 1 de 2), **se recomienda fuertemente agregar SPF tambien** porque:
+
 1. Algunos servidores de email son mas estrictos que el estandar DMARC
 2. Mejor reputacion del dominio con ambos alineados
 3. Redundancia: si DKIM falla por alguna razon, SPF rescata la entrega
@@ -166,18 +173,19 @@ DMARC requiere que pase **al menos uno** de:
 
 **Headers relevantes para threading**:
 
-| Header | Comportamiento en Brevo |
-|---|---|
-| `Message-ID` | Generado automaticamente por Brevo al enviar. Se incluye en el response de la API y en el webhook `delivered` |
-| `In-Reply-To` | Se puede setear manualmente via `headers` en la API |
-| `References` | Se puede setear manualmente via `headers` en la API |
-| `Subject` | Debe incluir "Re: " para que Gmail/Outlook lo agrupen en el thread |
+| Header        | Comportamiento en Brevo                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `Message-ID`  | Generado automaticamente por Brevo al enviar. Se incluye en el response de la API y en el webhook `delivered` |
+| `In-Reply-To` | Se puede setear manualmente via `headers` en la API                                                           |
+| `References`  | Se puede setear manualmente via `headers` en la API                                                           |
+| `Subject`     | Debe incluir "Re: " para que Gmail/Outlook lo agrupen en el thread                                            |
 
 ### B2. Custom Headers
 
 **Si, Brevo permite custom headers** en la API transaccional.
 
 **Limitaciones**:
+
 - No se pueden sobreescribir headers protegidos (From, To, Subject, Date)
 - El `Message-ID` es generado por Brevo y no puede ser sobreescrito
 - Los custom headers con prefijo `X-` se mantienen tal cual
@@ -209,20 +217,20 @@ Brevo **no mantiene threading automaticamente**. El flujo que se debe implementa
 
 Brevo ofrece tracking **nativo y automatico** en emails transaccionales:
 
-| Metrica | Disponible | Detalle |
-|---|---|---|
-| **Delivered** | Si | Confirmacion de entrega al servidor destino |
-| **Opened** | Si | Via pixel de tracking (1x1 transparent image) |
-| **Clicked** | Si | Via reescritura de URLs (link tracking) |
-| **Bounced** | Si | Hard bounce y soft bounce diferenciados |
-| **Soft Bounce** | Si | Reintentos automaticos configurables |
-| **Hard Bounce** | Si | Se agrega a lista de supresion automaticamente |
-| **Spam Report** | Si | Cuando el destinatario marca como spam |
-| **Unsubscribed** | Si | Para emails con link de unsub (mas relevante en marketing) |
-| **Blocked** | Si | Emails bloqueados por Brevo pre-envio (ej: destinatario en blacklist) |
-| **Deferred** | Si | Email aceptado pero pendiente de entrega final |
-| **Invalid** | Si | Direccion de email invalida |
-| **Forward** | No nativo | No hay deteccion de forward como SendGrid |
+| Metrica          | Disponible | Detalle                                                               |
+| ---------------- | ---------- | --------------------------------------------------------------------- |
+| **Delivered**    | Si         | Confirmacion de entrega al servidor destino                           |
+| **Opened**       | Si         | Via pixel de tracking (1x1 transparent image)                         |
+| **Clicked**      | Si         | Via reescritura de URLs (link tracking)                               |
+| **Bounced**      | Si         | Hard bounce y soft bounce diferenciados                               |
+| **Soft Bounce**  | Si         | Reintentos automaticos configurables                                  |
+| **Hard Bounce**  | Si         | Se agrega a lista de supresion automaticamente                        |
+| **Spam Report**  | Si         | Cuando el destinatario marca como spam                                |
+| **Unsubscribed** | Si         | Para emails con link de unsub (mas relevante en marketing)            |
+| **Blocked**      | Si         | Emails bloqueados por Brevo pre-envio (ej: destinatario en blacklist) |
+| **Deferred**     | Si         | Email aceptado pero pendiente de entrega final                        |
+| **Invalid**      | Si         | Direccion de email invalida                                           |
+| **Forward**      | No nativo  | No hay deteccion de forward como SendGrid                             |
 
 **Open tracking** funciona automaticamente insertando un pixel invisible. Se puede desactivar por email individual si se desea.
 
@@ -234,22 +242,23 @@ Brevo proporciona **webhooks en tiempo real** para todos los eventos de email tr
 
 **Eventos disponibles via webhook**:
 
-| Evento | Trigger | Payload incluye |
-|---|---|---|
-| `delivered` | Email entregado al servidor destino | messageId, email, date, ts, event |
-| `request` | Email enviado a los servidores de Brevo | messageId, email, date |
-| `hardBounce` | Bounce permanente | messageId, email, reason, date |
-| `softBounce` | Bounce temporal | messageId, email, reason, date |
-| `opened` | Email abierto (pixel cargado) | messageId, email, date, ip |
-| `click` | Link clickeado | messageId, email, link, date, ip |
-| `spam` | Reportado como spam | messageId, email, date |
-| `blocked` | Bloqueado pre-envio | messageId, email, reason, date |
-| `unsubscribed` | Click en unsub link | messageId, email, date |
-| `invalid` | Email invalido | messageId, email, reason, date |
-| `deferred` | Entrega diferida | messageId, email, reason, date |
-| `uniqueOpened` | Primera apertura unica | messageId, email, date, ip |
+| Evento         | Trigger                                 | Payload incluye                   |
+| -------------- | --------------------------------------- | --------------------------------- |
+| `delivered`    | Email entregado al servidor destino     | messageId, email, date, ts, event |
+| `request`      | Email enviado a los servidores de Brevo | messageId, email, date            |
+| `hardBounce`   | Bounce permanente                       | messageId, email, reason, date    |
+| `softBounce`   | Bounce temporal                         | messageId, email, reason, date    |
+| `opened`       | Email abierto (pixel cargado)           | messageId, email, date, ip        |
+| `click`        | Link clickeado                          | messageId, email, link, date, ip  |
+| `spam`         | Reportado como spam                     | messageId, email, date            |
+| `blocked`      | Bloqueado pre-envio                     | messageId, email, reason, date    |
+| `unsubscribed` | Click en unsub link                     | messageId, email, date            |
+| `invalid`      | Email invalido                          | messageId, email, reason, date    |
+| `deferred`     | Entrega diferida                        | messageId, email, reason, date    |
+| `uniqueOpened` | Primera apertura unica                  | messageId, email, date, ip        |
 
 **Configuracion de webhooks**:
+
 - Via UI: Transactional > Settings > Webhook
 - Via API: `POST /v3/webhooks` endpoint
 - Se puede configurar un webhook URL por evento o uno global para todos
@@ -257,18 +266,19 @@ Brevo proporciona **webhooks en tiempo real** para todos los eventos de email tr
 
 ### C3. Tracking por Plan
 
-| Plan | Open Tracking | Click Tracking | Webhooks | Real-time |
-|---|---|---|---|---|
-| Free | Si | Si | Si | Si |
-| Starter | Si | Si | Si | Si |
-| Business | Si | Si | Si | Si |
-| Enterprise | Si | Si | Si | Si |
+| Plan       | Open Tracking | Click Tracking | Webhooks | Real-time |
+| ---------- | ------------- | -------------- | -------- | --------- |
+| Free       | Si            | Si             | Si       | Si        |
+| Starter    | Si            | Si             | Si       | Si        |
+| Business   | Si            | Si             | Si       | Si        |
+| Enterprise | Si            | Si             | Si       | Si        |
 
 **El tracking esta incluido en TODOS los planes, incluyendo el free tier.** No hay costo adicional por tracking.
 
 ### C4. Webhooks en Tiempo Real
 
 **Si, los webhooks son en tiempo real** (near real-time):
+
 - Los eventos se disparan segundos despues de ocurrir
 - No hay batching (cada evento genera un POST individual)
 - Reintentos automaticos: si el webhook falla, Brevo reintenta hasta 5 veces con backoff exponencial
@@ -284,27 +294,27 @@ Brevo tiene **dos lineas de producto relevantes**: Marketing Platform y Transact
 
 ### Pricing - Marketing Platform (referencial)
 
-| Plan | Precio | Emails/mes | Contactos |
-|---|---|---|---|
-| **Free** | $0/mes | 300 emails/dia (~9,000/mes) | Ilimitados |
-| **Starter** | Desde $9/mes | 5,000/mes | Ilimitados |
-| **Business** | Desde $18/mes | 5,000/mes | Ilimitados |
-| **Enterprise** | Custom | Custom | Ilimitados |
+| Plan           | Precio        | Emails/mes                  | Contactos  |
+| -------------- | ------------- | --------------------------- | ---------- |
+| **Free**       | $0/mes        | 300 emails/dia (~9,000/mes) | Ilimitados |
+| **Starter**    | Desde $9/mes  | 5,000/mes                   | Ilimitados |
+| **Business**   | Desde $18/mes | 5,000/mes                   | Ilimitados |
+| **Enterprise** | Custom        | Custom                      | Ilimitados |
 
-*Nota: Los precios pueden variar; consultar brevo.com/pricing para valores exactos actualizados.*
+_Nota: Los precios pueden variar; consultar brevo.com/pricing para valores exactos actualizados._
 
 ### Pricing - Transactional Email (API/SMTP)
 
 **La API transaccional tiene un modelo de pricing separado** basado en volumen de emails:
 
-| Volumen mensual | Precio estimado |
-|---|---|
+| Volumen mensual      | Precio estimado               |
+| -------------------- | ----------------------------- |
 | Hasta 300 emails/dia | **Gratis** (incluido en Free) |
-| 20,000 emails/mes | ~$15/mes |
-| 40,000 emails/mes | ~$25/mes |
-| 60,000 emails/mes | ~$39/mes |
-| 100,000 emails/mes | ~$65/mes |
-| 150,000 emails/mes | ~$95/mes |
+| 20,000 emails/mes    | ~$15/mes                      |
+| 40,000 emails/mes    | ~$25/mes                      |
+| 60,000 emails/mes    | ~$39/mes                      |
+| 100,000 emails/mes   | ~$65/mes                      |
+| 150,000 emails/mes   | ~$95/mes                      |
 
 **Detalles importantes de pricing**:
 
@@ -324,12 +334,12 @@ Brevo tiene **dos lineas de producto relevantes**: Marketing Platform y Transact
 
 Asumiendo un volumen estimado de comunicaciones con clientes de Caminos de las Sierras:
 
-| Escenario | Volumen estimado | Plan recomendado | Costo mensual |
-|---|---|---|---|
-| POC / Prueba | < 300/dia | Free | $0 |
-| Produccion baja | 5,000 - 10,000/mes | Starter | $9 - $16/mes |
-| Produccion media | 20,000 - 40,000/mes | Starter/Business | $15 - $25/mes |
-| Produccion alta | 100,000+/mes | Business/Enterprise | $65+/mes |
+| Escenario        | Volumen estimado    | Plan recomendado    | Costo mensual |
+| ---------------- | ------------------- | ------------------- | ------------- |
+| POC / Prueba     | < 300/dia           | Free                | $0            |
+| Produccion baja  | 5,000 - 10,000/mes  | Starter             | $9 - $16/mes  |
+| Produccion media | 20,000 - 40,000/mes | Starter/Business    | $15 - $25/mes |
+| Produccion alta  | 100,000+/mes        | Business/Enterprise | $65+/mes      |
 
 ---
 
@@ -353,26 +363,26 @@ La API REST v3 de Brevo es completa y bien documentada.
 
 **Endpoints principales para este caso de uso**:
 
-| Endpoint | Metodo | Uso |
-|---|---|---|
-| `/v3/smtp/email` | POST | Enviar email transaccional |
-| `/v3/smtp/statistics/events` | GET | Obtener eventos de email |
-| `/v3/smtp/statistics/aggregatedReport` | GET | Reporte agregado |
-| `/v3/webhooks` | POST | Crear webhook |
-| `/v3/webhooks` | GET | Listar webhooks |
-| `/v3/webhooks/{webhookId}` | PUT/DELETE | Actualizar/eliminar webhook |
-| `/v3/inbound/events` | GET | Eventos de inbound parsing |
-| `/v3/senders` | POST/GET | Gestionar senders |
+| Endpoint                               | Metodo     | Uso                         |
+| -------------------------------------- | ---------- | --------------------------- |
+| `/v3/smtp/email`                       | POST       | Enviar email transaccional  |
+| `/v3/smtp/statistics/events`           | GET        | Obtener eventos de email    |
+| `/v3/smtp/statistics/aggregatedReport` | GET        | Reporte agregado            |
+| `/v3/webhooks`                         | POST       | Crear webhook               |
+| `/v3/webhooks`                         | GET        | Listar webhooks             |
+| `/v3/webhooks/{webhookId}`             | PUT/DELETE | Actualizar/eliminar webhook |
+| `/v3/inbound/events`                   | GET        | Eventos de inbound parsing  |
+| `/v3/senders`                          | POST/GET   | Gestionar senders           |
 
 ### I3. SMTP Relay
 
 **Brevo ofrece SMTP relay** como alternativa a la API REST:
 
-| Parametro | Valor |
-|---|---|
-| Host | `smtp-relay.brevo.com` (anteriormente `smtp-relay.sendinblue.com`, ambos funcionan) |
-| Puerto | 587 (TLS) o 465 (SSL) |
-| Autenticacion | Login: email de cuenta Brevo, Password: SMTP key (distinta de API key) |
+| Parametro     | Valor                                                                               |
+| ------------- | ----------------------------------------------------------------------------------- |
+| Host          | `smtp-relay.brevo.com` (anteriormente `smtp-relay.sendinblue.com`, ambos funcionan) |
+| Puerto        | 587 (TLS) o 465 (SSL)                                                               |
+| Autenticacion | Login: email de cuenta Brevo, Password: SMTP key (distinta de API key)              |
 
 **Ventaja del SMTP relay**: Mas facil de integrar con librerias existentes como Nodemailer (muy comun en NestJS). Las metricas y webhooks siguen funcionando con SMTP relay.
 
@@ -381,6 +391,7 @@ La API REST v3 de Brevo es completa y bien documentada.
 ### I4. Webhook Configuration para Eventos
 
 **Configuracion via UI**:
+
 - Ir a Transactional > Settings > Webhooks
 - Agregar URL del webhook
 - Seleccionar eventos deseados
@@ -406,14 +417,14 @@ Estado actual:                    Lo que falta:
 
 ### Comparacion de esfuerzo vs otros proveedores
 
-| Tarea | Brevo | SendGrid | Amazon SES | Mailgun |
-|---|---|---|---|---|
-| Verificar dominio | Ya hecho | Pendiente | Pendiente | Pendiente |
-| Configurar DKIM | Ya hecho | 2 CNAME records | 3 CNAME records | 2 TXT records |
-| Configurar SPF | 1 include | 1 include | 1 include | 1 include |
-| Verificar sender | 1 paso | 1 paso | Verificacion email/dominio | 1 paso |
-| Total DNS changes | **1** | **3-4** | **4-5** | **3-4** |
-| Riesgo de configuracion | **Bajo** | Medio | Medio-Alto | Medio |
+| Tarea                   | Brevo     | SendGrid        | Amazon SES                 | Mailgun       |
+| ----------------------- | --------- | --------------- | -------------------------- | ------------- |
+| Verificar dominio       | Ya hecho  | Pendiente       | Pendiente                  | Pendiente     |
+| Configurar DKIM         | Ya hecho  | 2 CNAME records | 3 CNAME records            | 2 TXT records |
+| Configurar SPF          | 1 include | 1 include       | 1 include                  | 1 include     |
+| Verificar sender        | 1 paso    | 1 paso          | Verificacion email/dominio | 1 paso        |
+| Total DNS changes       | **1**     | **3-4**         | **4-5**                    | **3-4**       |
+| Riesgo de configuracion | **Bajo**  | Medio           | Medio-Alto                 | Medio         |
 
 ### Ventajas especificas
 
@@ -447,13 +458,13 @@ Estado actual:                    Lo que falta:
 
 ### Riesgos identificados
 
-| Riesgo | Probabilidad | Impacto | Mitigacion |
-|---|---|---|---|
-| DKIM key 1024-bit (no 2048) | Baja | Bajo | Funcional pero se podria actualizar a futuro |
-| Inbound parsing pierde emails | Baja | Alto | Mantener copia en Google Workspace (no borrar originales) |
-| Rate limit en free tier | Media | Medio | Migrar a plan pago si se excede |
-| SDK con bugs | Media | Bajo | Usar API REST directamente |
-| Cambio de pricing | Baja | Medio | Contratar plan anual si se encuentra buen precio |
+| Riesgo                        | Probabilidad | Impacto | Mitigacion                                                |
+| ----------------------------- | ------------ | ------- | --------------------------------------------------------- |
+| DKIM key 1024-bit (no 2048)   | Baja         | Bajo    | Funcional pero se podria actualizar a futuro              |
+| Inbound parsing pierde emails | Baja         | Alto    | Mantener copia en Google Workspace (no borrar originales) |
+| Rate limit en free tier       | Media        | Medio   | Migrar a plan pago si se excede                           |
+| SDK con bugs                  | Media        | Bajo    | Usar API REST directamente                                |
+| Cambio de pricing             | Baja         | Medio   | Contratar plan anual si se encuentra buen precio          |
 
 ---
 
@@ -518,18 +529,18 @@ sequenceDiagram
 
 ### Brevo como candidato para la POC
 
-| Criterio | Evaluacion | Nota |
-|---|---|---|
-| Inbound email | **Viable** | Via forwarding desde Google Workspace + inbound parsing |
-| Outbound autenticado | **Casi listo** | Solo falta agregar SPF include |
-| Threading | **Manual pero factible** | Via custom headers en API transaccional |
-| Tracking | **Completo** | Open, click, bounce, delivered - incluido en todos los planes |
-| Webhooks | **Completos** | Tiempo real, todos los eventos, incluido en free |
-| Precio POC | **$0** | Free tier suficiente para pruebas |
-| Precio produccion | **$9-25/mes** | Para volumenes tipicos de soporte |
-| Integracion NestJS | **Buena** | SDK disponible + API REST + SMTP relay |
-| Setup DNS restante | **1 cambio** | Solo agregar `include:sendinblue.com` al SPF |
-| DMARC compliance | **Alta** | DKIM ya alineado, SPF sera bonus |
+| Criterio             | Evaluacion               | Nota                                                          |
+| -------------------- | ------------------------ | ------------------------------------------------------------- |
+| Inbound email        | **Viable**               | Via forwarding desde Google Workspace + inbound parsing       |
+| Outbound autenticado | **Casi listo**           | Solo falta agregar SPF include                                |
+| Threading            | **Manual pero factible** | Via custom headers en API transaccional                       |
+| Tracking             | **Completo**             | Open, click, bounce, delivered - incluido en todos los planes |
+| Webhooks             | **Completos**            | Tiempo real, todos los eventos, incluido en free              |
+| Precio POC           | **$0**                   | Free tier suficiente para pruebas                             |
+| Precio produccion    | **$9-25/mes**            | Para volumenes tipicos de soporte                             |
+| Integracion NestJS   | **Buena**                | SDK disponible + API REST + SMTP relay                        |
+| Setup DNS restante   | **1 cambio**             | Solo agregar `include:sendinblue.com` al SPF                  |
+| DMARC compliance     | **Alta**                 | DKIM ya alineado, SPF sera bonus                              |
 
 ### Recomendacion
 
@@ -555,28 +566,39 @@ sequenceDiagram
 ## Referencias
 
 ### Pricing
+
 - Brevo Pricing Plans: <https://www.brevo.com/pricing/>
 
 ### Inbound Parsing
+
 - Parse inbound email (documentacion): <https://developers.brevo.com/docs/inbound-parse-webhooks>
 - Brevo Inbound Parsing (overview): <https://www.brevo.com/inbound-parsing/>
 - Get inbound email events API: <https://developers.brevo.com/reference/get-inbound-email-events>
 
 ### API Transaccional (Envio)
+
 - Send a transactional email (guia): <https://developers.brevo.com/docs/send-a-transactional-email>
 - Send a transactional email (API reference): <https://developers.brevo.com/reference/send-transac-email>
 - SMTP relay integration: <https://developers.brevo.com/docs/smtp-integration>
 
+### Limites de tamanio de mensaje y attachments
+
+- Add an attachment to an email campaign: <https://help.brevo.com/hc/en-us/articles/11098615382802-Add-an-attachment-to-an-email-campaign>
+- Platform quotas (limites de objetos y recursos): <https://developers.brevo.com/docs/platform-quotas>
+
 ### Webhooks (Tracking/Eventos)
+
 - Transactional webhooks: <https://developers.brevo.com/docs/transactional-webhooks>
 - Getting started with webhooks: <https://developers.brevo.com/docs/how-to-use-webhooks>
 - Create webhook (API reference): <https://developers.brevo.com/reference/createwebhook>
 
 ### SDK y Librerias
+
 - `@getbrevo/brevo` (npm): <https://www.npmjs.com/package/@getbrevo/brevo>
 - Brevo Node.js SDK (GitHub): <https://github.com/getbrevo/brevo-node>
 - SDKs and libraries: <https://developers.brevo.com/docs/api-clients>
 
 ### Documentacion General
+
 - Brevo API Documentation: <https://developers.brevo.com>
 - Brevo sitio principal: <https://www.brevo.com>

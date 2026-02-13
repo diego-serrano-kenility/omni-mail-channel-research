@@ -27,7 +27,7 @@ Dos opciones de SMTP:
 | Opcion | Host | Puerto | Auth | Limite diario |
 |---|---|---|---|---|
 | **Gmail SMTP** | `smtp.gmail.com` | 587 (TLS) / 465 (SSL) | OAuth2 o App Password | 2,000/dia por usuario |
-| **SMTP Relay** | `smtp-relay.gmail.com` | 587 (TLS) / 465 (SSL) | IP allowlist o SMTP AUTH | Hasta 10,000/dia (configurable por admin) |
+| **SMTP Relay** | `smtp-relay.gmail.com` | 587 (TLS) / 465 (SSL) | IP allowlist o SMTP AUTH | Hasta 10,000/dia por usuario (limite fijo de Google) |
 
 **Gmail SMTP** (`smtp.gmail.com`):
 - Requiere OAuth2 (recomendado) o App Password (legacy, requiere 2FA habilitado)
@@ -38,7 +38,9 @@ Dos opciones de SMTP:
 **SMTP Relay** (`smtp-relay.gmail.com`):
 - Requiere configuracion en Google Admin Console (Apps > Google Workspace > Gmail > Routing > SMTP Relay)
 - Se puede autenticar por IP (allowlist) o por credenciales SMTP
-- Limite configurable por admin, default hasta 10,000 mensajes/dia
+- Limite de hasta 10,000 mensajes/dia por usuario (fijo por Google, no configurable; Google puede reducirlo segun practicas de envio)
+- Limite organizacional: hasta 4.6 millones de recipients en 24 horas
+- Los limites de SMTP Relay y Gmail se cuentan por separado e independientemente
 - Mas apropiado para envio automatizado desde servidores
 - Requiere que el admin del Workspace lo habilite
 
@@ -94,7 +96,7 @@ Dos opciones de SMTP:
 
 ### A1. Envio (Outbound)
 
-**Ventaja principal**: Zero cambios DNS.
+**Ventaja principal**: Sin cambios DNS.
 
 El email sale desde la misma infraestructura que el cliente ya usa. SPF, DKIM y DMARC ya estan configurados para ese servidor. No hay que agregar `include:sendgrid.net` ni CNAMEs de DKIM de terceros.
 
@@ -115,9 +117,9 @@ El SMTP directo resuelve el **envio**, pero para la **recepcion** se necesita un
 
 **Por que se descarta IMAP**: IMAP polling es ineficiente (consume recursos constantemente aunque no haya emails nuevos), IMAP IDLE es fragil (conexiones persistentes que se caen y requieren reconexion), ambos requieren gestionar credenciales IMAP por cliente (incluyendo OAuth2 token refresh), y el parsing de emails crudos en formato MIME agrega complejidad innecesaria cuando los providers ya ofrecen webhooks con JSON parseado.
 
-**Recomendacion para multi-tenant**: Usar forwarding desde el email del cliente hacia un provider de inbound parsing. El provider parsea el email y lo entrega como un POST JSON a tu backend. Esto funciona con cualquier proveedor de email del cliente (Google Workspace, M365, cPanel, etc.) siempre que soporte reglas de forwarding, lo cual es universal.
+**Recomendacion para multi-tenant**: Usar forwarding desde el email del cliente hacia un provider de inbound parsing. El provider parsea el email y lo entrega como un POST JSON al backend. Esto funciona con cualquier proveedor de email del cliente (Google Workspace, M365, cPanel, etc.) siempre que soporte reglas de forwarding, lo cual es universal.
 
-### A3. DNS: Zero Cambios
+### A3. DNS: Sin Cambios
 
 | Aspecto | SMTP Directo | SendGrid | Amazon SES | Brevo |
 |---|---|---|---|---|
@@ -186,9 +188,9 @@ sequenceDiagram
 
 ### Ventajas del enfoque hibrido
 
-1. **Zero DNS changes en el dominio del cliente** - No se necesita agregar SPF includes ni DKIM CNAMEs porque el outbound sale del propio SMTP del cliente
+1. **Sin DNS changes en el dominio del cliente** - No se necesita agregar SPF includes ni DKIM CNAMEs porque el outbound sale del propio SMTP del cliente
 2. **DMARC nativo** - El email es genuinamente del cliente, pasa SPF/DKIM/DMARC sin configuracion adicional
-3. **Zero costo por email enviado** - Usa la infraestructura que el cliente ya paga
+3. **Sin costo por email enviado** - Usa la infraestructura que el cliente ya paga
 4. **Inbound simple via webhooks** - Sin IMAP polling, sin conexiones persistentes, sin parsing de MIME crudo
 5. **Escalable para multi-tenant** - Cada cliente nuevo solo necesita: credenciales SMTP + regla de forwarding
 
@@ -239,12 +241,12 @@ Para tener open/click tracking, hay que implementarlo manualmente:
 
 **Open tracking**:
 - Insertar un pixel `<img>` en el HTML que apunte a un endpoint propio
-- `<img src="https://tu-api.com/track/open/{emailId}" width="1" height="1" />`
+- `<img src="https://api.omnibrein.com/track/open/{emailId}" width="1" height="1" />`
 - Mismas limitaciones que cualquier pixel tracking (Apple Mail Privacy, image blocking)
 
 **Click tracking**:
 - Reescribir URLs en el HTML para pasar por un redirect propio
-- `<a href="https://tu-api.com/track/click/{emailId}?url=https://destino-real.com">`
+- `<a href="https://api.omnibrein.com/track/click/{emailId}?url=https://destino-real.com">`
 - El backend loguea el click y redirige al destino
 
 **Delivery/Bounce**:
@@ -335,8 +337,8 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 
 ## Ventajas
 
-1. **Zero cambios DNS**: La ventaja mas significativa. No hay coordinacion con IT del cliente para registros DNS.
-2. **Zero costo por email**: Sin fees de servicio transaccional.
+1. **Sin cambios DNS**: La ventaja mas significativa. No hay coordinacion con IT del cliente para registros DNS.
+2. **Sin costo por email**: Sin fees de servicio transaccional.
 3. **DMARC nativo**: El email sale de la infra autorizada del cliente. SPF/DKIM/DMARC pasan sin configuracion adicional.
 4. **Email genuino**: El email es indistinguible de uno enviado manualmente desde el webmail del cliente.
 5. **Carpeta Enviados** (Gmail/Outlook via SMTP): Los emails pueden aparecer en la carpeta Enviados del cliente.
@@ -350,7 +352,7 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 4. **Limites de envio restrictivos**: Especialmente en hosting compartido (100-500/hora) y Gmail (2,000/dia).
 5. **Sin bounce handling automatico en outbound**: Los NDRs llegan al inbox y parsearlos es complejo y no estandarizado.
 6. **OAuth2 migration**: Google y Microsoft estan deprecando basic auth. Hay que soportar OAuth2 con refresh tokens.
-7. **Debugging distribuido**: Si un email no llega, el problema puede estar en el SMTP del cliente, no en tu plataforma.
+7. **Debugging distribuido**: Si un email no llega, el problema puede estar en el SMTP del cliente, no en la plataforma.
 8. **Forwarding por cliente**: Cada cliente nuevo debe configurar una regla de forwarding hacia el provider de inbound (bajo esfuerzo pero es una dependencia).
 
 ---
@@ -372,7 +374,7 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 - Se manejan **muchos clientes** y se quiere una sola integracion
 
 ### Enfoque hibrido (recomendado para produccion):
-- **Outbound**: SMTP directo del cliente (zero DNS, zero cost, DMARC nativo)
+- **Outbound**: SMTP directo del cliente (sin cambios DNS, sin costo, DMARC nativo)
 - **Inbound**: Forwarding desde el email del cliente hacia un provider de inbound parsing (Brevo, SendGrid, o SES) que entrega el email parseado via webhook al backend
 - **Escalamiento**: Si el cliente necesita tracking completo en outbound o tiene volumen alto, migrar outbound a servicio transaccional (requiere DNS changes en el dominio del cliente)
 - La plataforma soporta ambos modos de outbound, configurable por cliente
@@ -391,7 +393,7 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 | **Inbound** | Forwarding + provider webhook (sin IMAP) |
 | **Complejidad** | Media (multi-provider SMTP, OAuth2 para Google/Microsoft; inbound via webhooks de provider) |
 | **Tiempo POC** | 2-4 dias |
-| **Mayor ventaja** | Zero DNS changes en dominio del cliente, zero costo, DMARC nativo |
+| **Mayor ventaja** | Sin cambios en DNS del cliente, sin costo, DMARC nativo |
 | **Mayor desventaja** | Sin tracking nativo en outbound, gestion de credenciales SMTP por cliente |
 
 ---
@@ -400,14 +402,19 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 
 ### Google Workspace SMTP
 - Send email from a printer, scanner, or app (smtp.gmail.com y smtp-relay.gmail.com): <https://support.google.com/a/answer/176600>
-- Route outgoing SMTP relay messages through Google: <https://support.google.com/a/answer/2956491>
-- Gmail sending limits in Google Workspace (2,000/dia por usuario): <https://support.google.com/a/answer/166852>
+- Route outgoing SMTP relay messages through Google (configuracion y limites de SMTP Relay, 10,000 mensajes/dia por usuario, 4.6M recipients/dia organizacional): <https://support.google.com/a/answer/2956491>
+- Gmail sending limits in Google Workspace (2,000/dia por usuario via Gmail/API, limites independientes de SMTP Relay): <https://support.google.com/a/answer/166852>
+- SMTP relay service error messages (errores por exceso de limites diarios): <https://support.google.com/a/answer/6140680>
 
 ### Microsoft 365 SMTP
 - Enable or disable SMTP AUTH in Exchange Online: <https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission>
 - Exchange Online limits (sending limits, recipients/dia): <https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits>
 - Use OAuth authentication for high volume emails (M365): <https://learn.microsoft.com/en-us/exchange/mail-flow-best-practices/oauth-high-volume-mails-m365>
 - Tenant outbound email limits (announcement): <https://techcommunity.microsoft.com/blog/exchange/introducing-exchange-online-tenant-outbound-email-limits/4372797>
+
+### Limites de tamanio de mensaje
+- Gmail attachment limits (25 MB, archivos mayores se convierten en links de Drive): <https://support.google.com/mail/answer/6584>
+- Exchange Online limits (incluye tamanio max de mensaje 25 MB): <https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits>
 
 ### Nodemailer (libreria SMTP para Node.js)
 - Nodemailer SMTP transport: <https://nodemailer.com/smtp>

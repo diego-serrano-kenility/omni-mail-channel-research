@@ -94,18 +94,18 @@ flowchart LR
 4. **Otorgar permiso de publicación** a la service account de Gmail:
    - Otorgar rol `Pub/Sub Publisher` a `gmail-api-push@system.gserviceaccount.com` en el topic
 5. **Crear una Pub/Sub Subscription**:
-   - **Push subscription**: Pub/Sub envía HTTP POST a tu webhook endpoint
-   - **Pull subscription**: Tu app hace polling a Pub/Sub por mensajes (más simple para desarrollo)
+   - **Push subscription**: Pub/Sub envía HTTP POST al webhook endpoint
+   - **Pull subscription**: La aplicación hace polling a Pub/Sub por mensajes (más simple para desarrollo)
 6. **Llamar a `users.watch`** para comenzar a vigilar el mailbox
 
 #### Payload de notificación
 
-Cuando ocurre un cambio, Pub/Sub entrega un mensaje que contiene la dirección del mailbox y un `historyId`. **Detalle crítico**: La notificación solo te indica que el mailbox cambió y te da un `historyId`. NO incluye el contenido del mensaje. Tu backend debe entonces llamar a `history.list` con el `historyId` anterior para encontrar qué cambió, y luego `messages.get` para obtener los mensajes reales.
+Cuando ocurre un cambio, Pub/Sub entrega un mensaje que contiene la dirección del mailbox y un `historyId`. **Detalle crítico**: La notificación indica que el mailbox cambió y proporciona un `historyId`. NO incluye el contenido del mensaje. El backend debe entonces llamar a `history.list` con el `historyId` anterior para encontrar qué cambió, y luego `messages.get` para obtener los mensajes reales.
 
 #### Expiración y renovación del Watch
 
 - Un watch expira después de **7 días** (el campo `expiration` en la respuesta)
-- **Debes** renovarlo antes de que expire llamando a `users.watch` nuevamente
+- **Se debe renovar** antes de que expire llamando a `users.watch` nuevamente
 - Mejor práctica: configurar un cron job para renovar cada 6 días
 - Llamar a `watch` nuevamente antes de la expiración es seguro (reemplaza el watch existente)
 
@@ -123,13 +123,13 @@ El filtro `labelIds` en la request de watch controla qué cambios generan notifi
 
 | Aspecto | Push Subscription | Pull Subscription |
 |---|---|---|
-| Entrega | HTTP POST a tu endpoint | Tu app hace polling a Pub/Sub |
+| Entrega | HTTP POST al endpoint | La aplicación hace polling a Pub/Sub |
 | Latencia | Casi en tiempo real | Depende de la frecuencia de polling |
 | Requiere | Endpoint HTTPS público | No se necesita endpoint público |
 | Mejor para | Producción | Desarrollo/testing |
 | Reintentos | Automático con exponential backoff | Manual |
 
-Para un backend NestJS, una **Push subscription** es ideal: Pub/Sub envía un HTTP POST a tu webhook endpoint (ej. `https://your-api.com/webhooks/gmail`), y tu controller lo procesa.
+Para un backend NestJS, una **Push subscription** es ideal: Pub/Sub envía un HTTP POST al webhook endpoint (ej. `https://your-api.com/webhooks/gmail`), y el controller lo procesa.
 
 ### A.3 Envío de emails vía Gmail API
 
@@ -166,7 +166,7 @@ O usar el scope más amplio `https://mail.google.com/` por simplicidad durante e
 
 #### Enviar "como" un usuario
 
-Cuando se usa una **service account con domain-wide delegation**, puedes impersonar a cualquier usuario en el dominio de Workspace. La service account crea un token JWT con el campo `sub` establecido al email del usuario objetivo. El email se envía entonces **genuinamente desde** la cuenta Gmail de ese usuario. Aparece en su carpeta Enviados, usa su firma, y está autenticado con el SPF/DKIM propio de Google.
+Cuando se usa una **service account con domain-wide delegation**, es posible impersonar a cualquier usuario en el dominio de Workspace. La service account crea un token JWT con el campo `sub` establecido al email del usuario objetivo. El email se envía entonces **genuinamente desde** la cuenta Gmail de ese usuario. Aparece en su carpeta Enviados, usa su firma, y está autenticado con el SPF/DKIM propio de Google.
 
 ### A.4 Domain-Wide Delegation
 
@@ -280,7 +280,7 @@ flowchart TD
 
 ### B.2 Responder a un thread programáticamente
 
-Para responder a un thread y mantener el threading, debes:
+Para responder a un thread y mantener el threading, se debe:
 
 1. **Incluir el `threadId`** en la request de envío
 2. **Establecer los headers correctos** en el mensaje raw (`In-Reply-To`, `References`)
@@ -305,8 +305,8 @@ MIME-Version: 1.0
 | Header | Propósito | Quién lo establece |
 |---|---|---|
 | `Message-ID` | Identificador único para este mensaje | Gmail lo genera automáticamente al enviar |
-| `In-Reply-To` | Message-ID del mensaje al que se responde | Tú lo estableces en el mensaje raw |
-| `References` | Lista separada por espacios de todos los Message-IDs en la conversación | Tú lo estableces en el mensaje raw |
+| `In-Reply-To` | Message-ID del mensaje al que se responde | Se establece en el mensaje raw |
+| `References` | Lista separada por espacios de todos los Message-IDs en la conversación | Se establece en el mensaje raw |
 
 #### Cómo obtener estos headers
 
@@ -314,27 +314,27 @@ Al leer un mensaje vía la API, los headers están en el array `payload.headers`
 
 #### Construir la cadena de respuestas
 
-Al responder a un mensaje, debes establecer `In-Reply-To` al `Message-ID` del mensaje original, agregar ese ID al header `References` (o usarlo como valor único si no existen referencias previas), y usar el prefijo `Re:` en el subject si no está ya presente.
+Al responder a un mensaje, se debe establecer `In-Reply-To` al `Message-ID` del mensaje original, agregar ese ID al header `References` (o usarlo como valor único si no existen referencias previas), y usar el prefijo `Re:` en el subject si no está ya presente.
 
 ### B.4 ¿El threading es automático?
 
-**Parcialmente automático, pero debes hacer tu parte.**
+**Parcialmente automático, pero se debe completar manualmente.**
 
-| Lo que Gmail hace automáticamente | Lo que tú debes hacer |
+| Lo que Gmail hace automáticamente | Lo que se debe hacer manualmente |
 |---|---|---|
 | Asigna `Message-ID` a los mensajes enviados | Establecer el header `In-Reply-To` correctamente |
 | Agrupa mensajes por thread cuando los headers coinciden | Establecer el header `References` correctamente |
 | Proporciona `threadId` en todos los mensajes | Incluir `threadId` en la request de envío |
 | Maneja el matching del prefijo `Re:` en el subject | Usar prefijo `Re:` en los subjects de respuesta |
 
-**Si incluyes el `threadId` en la request de envío Y estableces `In-Reply-To`/`References` correctamente**, Gmail:
+**Si se incluye el `threadId` en la request de envío y se establecen `In-Reply-To`/`References` correctamente**, Gmail:
 - Agregará la respuesta al thread correcto
 - La mostrará como parte de la conversación en la UI de Gmail
 - El cliente de email del destinatario también la threadeará correctamente (porque los headers RFC 2822 son correctos)
 
-**Si solo incluyes `threadId` pero NO los headers**, Gmail aún asociará el mensaje con el thread internamente, pero el cliente de email del destinatario podría no threadearlo correctamente.
+**Si solo se incluye `threadId` pero NO los headers**, Gmail aún asociará el mensaje con el thread internamente, pero el cliente de email del destinatario podría no threadearlo correctamente.
 
-**Si solo estableces los headers pero NO el `threadId`**, la Gmail API devolverá un error o creará un nuevo thread.
+**Si solo se establecen los headers pero NO el `threadId`**, la Gmail API devolverá un error o creará un nuevo thread.
 
 **Mejor práctica**: Siempre establecer tanto `threadId` como los headers correctos.
 
@@ -359,22 +359,22 @@ Gmail soporta **read receipts** (MDN - Message Disposition Notification) vía el
 
 ### C.2 Open/Click tracking — qué es posible
 
-Dado que la Gmail API envía mensajes raw RFC 2822, **puedes implementar tu propio tracking**:
+Dado que la Gmail API envía mensajes raw RFC 2822, **es posible implementar tracking propio**:
 
 #### DIY Open Tracking (Tracking Pixel)
-- Insertar una imagen transparente 1x1 en el body HTML con una URL única que apunte a tu tracking endpoint
-- Cuando el cliente de email del destinatario carga las imágenes, tu servidor recibe la request HTTP
+- Insertar una imagen transparente 1x1 en el body HTML con una URL única que apunte al tracking endpoint
+- Cuando el cliente de email del destinatario carga las imágenes, el servidor recibe la request HTTP
 - **Limitaciones**:
   - Muchos clientes bloquean imágenes por defecto (Apple Mail Privacy Protection, Outlook, etc.)
   - Gmail puede hacer proxy de imágenes a través de los servidores de Google (`googleusercontent.com`), enmascarando IP/timing
   - No confiable para tasas de open precisas (típicamente 40-60% de precisión)
 
 #### DIY Click Tracking
-- Envolver todos los links en el body del email con URLs de redirect que apunten a tu tracking endpoint, que registra el click y redirige al destino real
+- Envolver todos los links en el body del email con URLs de redirect que apunten al tracking endpoint, que registra el click y redirige al destino real
 - **Más confiable** que el open tracking, pero aún no 100% (algunos escáneres de seguridad hacen pre-click de links)
 
 #### DIY Delivery Tracking
-- Puedes verificar si un mensaje fue enviado exitosamente (la API devuelve el message ID)
+- Es posible verificar si un mensaje fue enviado exitosamente (la API devuelve el message ID)
 - Para bounces: monitorear el inbox por mensajes de bounce-back (NDR - Non-Delivery Reports)
 - No hay webhook/callback para eventos de entrega
 
@@ -391,7 +391,7 @@ Dado que la Gmail API envía mensajes raw RFC 2822, **puedes implementar tu prop
 | Email respondido | Sí | Nuevo mensaje llega al thread |
 | Email marcado como spam | No | N/A |
 
-### C.4 ¿Qué cambios puedes vigilar vía Pub/Sub?
+### C.4 ¿Qué cambios se pueden vigilar vía Pub/Sub?
 
 El watch de Pub/Sub en un mailbox de Gmail detecta:
 
@@ -403,9 +403,9 @@ El watch de Pub/Sub en un mailbox de Gmail detecta:
 | Draft creado/modificado | Sí (si se vigila DRAFT) | N/A |
 | Mensaje enviado | Sí (aparece en SENT) | Confirmar envíos |
 
-**Importante**: Estos son cambios en el **mailbox vigilado** únicamente (ej. el mailbox de `info@caminosdelassierras.com.ar`). No puedes vigilar qué ocurre en el mailbox del destinatario.
+**Importante**: Estos son cambios en el **mailbox vigilado** únicamente (ej. el mailbox de `info@caminosdelassierras.com.ar`). No se puede vigilar qué ocurre en el mailbox del destinatario.
 
-Vía `history.list`, puedes detectar:
+Vía `history.list`, se puede detectar:
 - `messagesAdded` — mensajes nuevos en el mailbox
 - `messagesDeleted` — mensajes removidos
 - `labelsAdded` — labels agregados a mensajes (ej. UNREAD removido = mensaje fue leído en la UI de Gmail)
@@ -463,7 +463,7 @@ Las operaciones individuales consumen diferentes quota units:
 | `history.list` | 2 |
 | `users.watch` | 100 |
 
-A 250 units/segundo/usuario, puedes hacer aproximadamente:
+A 250 units/segundo/usuario, se pueden hacer aproximadamente:
 - 50 llamadas `messages.list` por segundo por usuario
 - 2-3 llamadas `messages.send` por segundo por usuario
 
@@ -498,7 +498,7 @@ Las push notifications de Gmail son extremadamente pequeñas (~200 bytes cada un
 
 ### Costos adicionales de acceso a la API
 
-**No hay costo adicional por usar la Gmail API.** Está incluida con Google Workspace. Solo necesitas:
+**No hay costo adicional por usar la Gmail API.** Está incluida con Google Workspace. Solo se necesita:
 - Un proyecto de Google Cloud (gratis crear)
 - La Gmail API habilitada (gratis)
 - Una service account (gratis)
@@ -506,7 +506,7 @@ Las push notifications de Gmail son extremadamente pequeñas (~200 bytes cada un
 
 Los únicos costos de GCP serían:
 - Pub/Sub (el free tier cubre el uso típico)
-- Si hospedas tu backend NestJS en GCP (Cloud Run, GKE, etc.) — esos tienen sus propios costos
+- Si el backend NestJS se hospeda en GCP (Cloud Run, GKE, etc.) — esos tienen sus propios costos
 
 ### Resumen de costos para este POC
 
@@ -552,32 +552,32 @@ La Gmail API es fundamentalmente una **API de cuenta de email de usuario**, no u
 | **Templates** | Ninguno | Motores de templates incorporados |
 | **Analytics** | Ninguno | Dashboards completos |
 | **Soporte** | Comunidad/soporte Workspace | Soporte dedicado de deliverability |
-| **Compliance** | Tú gestionas todo | CAN-SPAM, ayudas GDPR incorporadas |
+| **Compliance** | Se gestiona manualmente | CAN-SPAM, ayudas GDPR incorporadas |
 
 **Cuándo Gmail API es la elección correcta**:
-- Operas dentro de un solo dominio de Workspace
+- Se opera dentro de un solo dominio de Workspace
 - El volumen es moderado (< 2.000 emails/día por mailbox)
-- Necesitas la identidad "genuina" de un usuario del dominio
+- Se necesita la identidad "genuina" de un usuario del dominio
 - Los cambios DNS son imposibles o indeseables
 - La conversación bidireccional (respuesta-a-respuesta) es el patrón principal
 - La sensibilidad al costo es alta
 
 **Cuándo un servicio transaccional es mejor**:
 - Alto volumen (> 2.000 emails/día)
-- Necesitas tracking robusto (open, click, eventos de entrega)
-- Necesitas características avanzadas de deliverability
+- Se necesita tracking robusto (open, click, eventos de entrega)
+- Se necesitan características avanzadas de deliverability
 - Comunicación uno-a-muchos (notificaciones, marketing)
-- Necesitas gestión de reputación de IP dedicada
+- Se necesita gestión de reputación de IP dedicada
 
 ### L.3 Términos de servicio de Google
 
 La Acceptable Use Policy de Google y las Gmail Program Policies incluyen:
 
-- **No bulk unsolicited email**: No puedes usar la Gmail API para enviar spam o marketing masivo
+- **No bulk unsolicited email**: No se puede usar la Gmail API para enviar spam o marketing masivo
 - **Los rate limits se aplican**: Los sistemas automatizados que excedan los límites pueden ser throttled o suspendidos
 - **Auditoría de domain-wide delegation**: Google puede auditar el uso de domain-wide delegation
-- **Seguridad de la clave de service account**: Eres responsable de asegurar la clave privada
-- **No scraping**: No debes usar la API para hacer scraping o indexar contenido de email para propósitos no relacionados con el usuario
+- **Seguridad de la clave de service account**: Es responsabilidad asegurar la clave privada de forma segura
+- **No scraping**: No se debe usar la API para hacer scraping o indexar contenido de email para propósitos no relacionados con el usuario
 
 Para este caso de uso (responder consultas de clientes desde un mailbox compartido), el patrón de uso está **bien dentro del uso aceptable**. Esto es esencialmente automatizar lo que un humano haría en la interfaz web de Gmail.
 
@@ -604,8 +604,8 @@ Sin domain-wide delegation, la service account **no puede impersonar usuarios**.
 
 1. **OAuth 2.0 User Consent Flow**: Un humano con acceso a `info@caminosdelassierras.com.ar` tendría que:
    - Pasar por la pantalla de consentimiento OAuth
-   - Otorgar a tu aplicación acceso a su Gmail
-   - Tu app almacena el refresh token para acceso continuo
+   - Otorgar a la aplicación acceso a su Gmail
+   - La aplicación almacena el refresh token para acceso continuo
    - **Desventaja**: Requiere interacción manual del usuario; los refresh tokens pueden expirar (aunque raramente para Workspace)
 
 2. **App Passwords** (no recomendado): Si 2FA está habilitado, el usuario puede generar una app password para acceso IMAP/SMTP. Esto es legacy y no recomendado.
@@ -624,26 +624,26 @@ Sin domain-wide delegation, la service account **no puede impersonar usuarios**.
 | **Orden de mensajes Pub/Sub** | Bajo | Usar historyId para procesar en orden |
 | **Gaps de history** | Medio | Si pasan > ~30 días sin procesar, el history puede no estar disponible |
 | **Procesamiento concurrente** | Bajo | Usar acknowledgment de Pub/Sub para evitar procesamiento duplicado |
-| **Attachments grandes** | Bajo | Gmail API soporta attachments hasta 25 MB (50 MB con endpoint de upload) |
+| **Attachments grandes** | Bajo | Gmail API soporta attachments hasta 25 MB (35 MB via endpoint de upload con resumable upload) |
 | **Múltiples mailboxes** | Medio | Cada mailbox necesita su propio watch; gestionar múltiples historyIds |
 
 ### L.7 Consideraciones adicionales
 
-1. **Las notificaciones de Pub/Sub no son a nivel de mensaje**: Recibes notificaciones de "algo cambió", no "aquí está el mensaje nuevo". Siempre debes llamar a `history.list` y luego `messages.get` para descubrir qué cambió realmente.
+1. **Las notificaciones de Pub/Sub no son a nivel de mensaje**: Se reciben notificaciones de "algo cambió", no "aquí está el mensaje nuevo". Siempre se debe llamar a `history.list` y luego `messages.get` para descubrir qué cambió realmente.
 
-2. **Notificaciones duplicadas**: Pub/Sub puede entregar notificaciones duplicadas. Tu handler debe ser idempotente (procesar el mismo historyId dos veces debe ser seguro).
+2. **Notificaciones duplicadas**: Pub/Sub puede entregar notificaciones duplicadas. El handler debe ser idempotente (procesar el mismo historyId dos veces debe ser seguro).
 
-3. **Gaps de History ID**: Si tu servicio está caído por un período extendido y ocurren muchos cambios, `history.list` puede no devolver todos los cambios (el historyId inicial puede ser muy antiguo). Debes implementar un fallback de full sync.
+3. **Gaps de History ID**: Si el servicio está caído por un período extendido y ocurren muchos cambios, `history.list` puede no devolver todos los cambios (el historyId inicial puede ser muy antiguo). Se debe implementar un fallback de full sync.
 
 4. **Codificación Base64url**: La Gmail API usa codificación base64url (no base64 estándar) para los bodies de mensajes. Usar codificación/decodificación `base64url` consistentemente.
 
-5. **Complejidad de MIME multipart**: Los emails del mundo real tienen estructuras MIME complejas (multipart/mixed, multipart/alternative, partes anidadas). Tu body parser debe manejar esto recursivamente.
+5. **Complejidad de MIME multipart**: Los emails del mundo real tienen estructuras MIME complejas (multipart/mixed, multipart/alternative, partes anidadas). El body parser debe manejar esto recursivamente.
 
 6. **Modo confidencial**: Los mensajes en Confidential Mode de Gmail tienen acceso restringido y no pueden ser reenviados/descargados vía API de la forma usual.
 
 7. **Labels vs Folders**: Gmail usa labels, no folders. Un mensaje puede tener múltiples labels. Entender la semántica de labels es importante para la gestión correcta de mensajes.
 
-8. **Scope del watch**: Un watch monitorea el mailbox de un usuario específico. Si necesitas vigilar múltiples mailboxes (ej. `info@` y `soporte@`), necesitas requests de watch separadas para cada uno.
+8. **Scope del watch**: Un watch monitorea el mailbox de un usuario específico. Si se necesita vigilar múltiples mailboxes (ej. `info@` y `soporte@`), se necesitan requests de watch separadas para cada uno.
 
 ---
 
@@ -700,14 +700,17 @@ Alternativamente, si el tracking es crítico, la Gmail API puede usarse solo par
 - Gmail API Send Messages: <https://developers.google.com/gmail/api/guides/send>
 - Gmail API Threads: <https://developers.google.com/gmail/api/guides/threads>
 - Gmail API Quota and Usage Limits: <https://developers.google.com/gmail/api/reference/quota>
+- Gmail API Uploading Attachments (metodos de upload, max 35 MB via API): <https://developers.google.com/workspace/gmail/api/guides/uploads>
+- Gmail attachment limits (25 MB, archivos mayores se convierten en links de Drive): <https://support.google.com/mail/answer/6584>
 
 ### Authentication and Authorization
 - Domain-Wide Delegation: <https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority>
 - Google Auth Library (Node.js): <https://github.com/googleapis/google-auth-library-nodejs>
 
-### Pricing and Limits
+### Pricing y limites
 - Google Workspace Pricing: <https://workspace.google.com/pricing>
-- Google Workspace Sending Limits: <https://support.google.com/a/answer/166852>
+- Gmail sending limits in Google Workspace (2,000/dia por usuario via Gmail/API): <https://support.google.com/a/answer/166852>
+- SMTP Relay sending limits (10,000 mensajes/dia por usuario, independiente de Gmail, 4.6M recipients/dia organizacional): <https://support.google.com/a/answer/2956491>
 - Cloud Pub/Sub Pricing: <https://cloud.google.com/pubsub/pricing>
 
 ### SDK
