@@ -1,91 +1,91 @@
-# SendGrid Technical POC Evaluation
+# Evaluación técnica POC de SendGrid
 
-**Context**: Receive emails at `info@caminosdelassierras.com.ar` (Google Workspace + Cloudflare DNS, DMARC `p=reject`), process in NestJS/Node.js backend, reply as `@caminosdelassierras.com.ar` maintaining thread continuity and tracking metrics.
+**Contexto**: Recibir emails en `info@caminosdelassierras.com.ar` (Google Workspace + Cloudflare DNS, DMARC `p=reject`), procesarlos en backend NestJS/Node.js, responder como `@caminosdelassierras.com.ar` manteniendo la continuidad del thread y las métricas de tracking.
 
-**Research Date**: February 2026
-**Knowledge basis**: SendGrid documentation and API reference through May 2025. Pricing and very recent feature changes should be verified against https://sendgrid.com/en-us/pricing and https://docs.sendgrid.com.
+**Fecha de investigación**: Febrero 2026
+**Base de conocimiento**: Documentación y referencia de API de SendGrid hasta mayo de 2025. Los precios y cambios de funcionalidades muy recientes deben verificarse en https://sendgrid.com/en-us/pricing y https://docs.sendgrid.com.
 
 ---
 
-## Challenge A — Sending and Receiving
+## Desafío A — Envío y recepción
 
 ### A1. Inbound Parse Webhook
 
-#### How It Works
-SendGrid's Inbound Parse Webhook intercepts emails sent to a domain (or subdomain) for which the MX records point to SendGrid. When an email arrives, SendGrid parses it and POSTs the content to a URL you configure.
+#### Cómo funciona
+El Inbound Parse Webhook de SendGrid intercepta los emails enviados a un dominio (o subdominio) cuyos registros MX apuntan a SendGrid. Cuando llega un email, SendGrid lo parsea y hace POST del contenido a una URL que configuras.
 
-**Setup Steps:**
-1. Add an MX record for the receiving domain/subdomain pointing to `mx.sendgrid.net` (priority 10).
-2. In the SendGrid dashboard (Settings → Inbound Parse), configure:
-   - The hostname/domain that will receive mail.
-   - The webhook URL (your backend endpoint, must be publicly accessible HTTPS).
-   - Whether to post the raw MIME message or the parsed version.
-3. SendGrid then POSTs to your webhook URL every time an email arrives.
+**Pasos de configuración:**
+1. Añadir un registro MX para el dominio/subdominio receptor que apunte a `mx.sendgrid.net` (prioridad 10).
+2. En el dashboard de SendGrid (Settings → Inbound Parse), configurar:
+   - El hostname/dominio que recibirá el mail.
+   - La URL del webhook (tu endpoint de backend, debe ser HTTPS accesible públicamente).
+   - Si enviar el mensaje MIME raw o la versión parseada.
+3. SendGrid hace POST a tu URL de webhook cada vez que llega un email.
 
-#### Payload Format
-SendGrid offers **two modes**:
+#### Formato del payload
+SendGrid ofrece **dos modos**:
 
-**Parsed Mode (default)** — `multipart/form-data` POST with these fields:
+**Modo Parsed (por defecto)** — POST `multipart/form-data` con estos campos:
 
-| Field | Description |
+| Campo | Descripción |
 |-------|-------------|
-| `headers` | Raw headers of the incoming email (full header block as a string) |
-| `dkim` | DKIM verification results (e.g., `{@domain.com : pass}`) |
-| `to` | Recipient address(es) as a string (e.g., `"Name" <email@domain.com>`) |
-| `from` | Sender address as a string |
-| `cc` | CC addresses (if any) |
-| `subject` | Email subject |
-| `text` | Plain text body (if present) |
-| `html` | HTML body (if present) |
-| `sender_ip` | IP of the sending server |
-| `envelope` | JSON string containing SMTP envelope `to` and `from` |
-| `attachments` | Number of attachments (integer) |
-| `attachment1`, `attachment2`, ... | Actual attachment files (binary, multipart file uploads) |
-| `attachment-info` | JSON mapping of attachment metadata (filename, content-type, content-id) |
-| `charsets` | JSON object mapping each field to its character encoding |
-| `SPF` | SPF verification result |
+| `headers` | Headers raw del email entrante (bloque completo de headers como string) |
+| `dkim` | Resultados de verificación DKIM (ej. `{@domain.com : pass}`) |
+| `to` | Dirección(es) del destinatario como string (ej. `"Name" <email@domain.com>`) |
+| `from` | Dirección del remitente como string |
+| `cc` | Direcciones CC (si las hay) |
+| `subject` | Asunto del email |
+| `text` | Cuerpo en texto plano (si está presente) |
+| `html` | Cuerpo HTML (si está presente) |
+| `sender_ip` | IP del servidor remitente |
+| `envelope` | String JSON con el envelope SMTP `to` y `from` |
+| `attachments` | Número de adjuntos (entero) |
+| `attachment1`, `attachment2`, ... | Archivos adjuntos reales (binarios, multipart file uploads) |
+| `attachment-info` | JSON con metadata de adjuntos (filename, content-type, content-id) |
+| `charsets` | Objeto JSON que mapea cada campo a su codificación de caracteres |
+| `SPF` | Resultado de verificación SPF |
 
-**Raw Mode** — `multipart/form-data` POST with:
+**Modo Raw** — POST `multipart/form-data` con:
 
-| Field | Description |
+| Campo | Descripción |
 |-------|-------------|
-| `email` | Full raw MIME message (the complete RFC 2822 email) |
-| `to` | Recipient address(es) |
-| `from` | Sender address |
-| `subject` | Subject |
-| `sender_ip` | IP of the sender |
-| `envelope` | JSON string with SMTP envelope |
-| `charsets` | Charset info |
-| `dkim` | DKIM result |
-| `SPF` | SPF result |
+| `email` | Mensaje MIME raw completo (el email RFC 2822 completo) |
+| `to` | Dirección(es) del destinatario |
+| `from` | Dirección del remitente |
+| `subject` | Asunto |
+| `sender_ip` | IP del remitente |
+| `envelope` | String JSON con el envelope SMTP |
+| `charsets` | Info de charset |
+| `dkim` | Resultado DKIM |
+| `SPF` | Resultado SPF |
 
-**Key detail**: Even in "raw" mode, it is **not** a JSON POST. It is always `multipart/form-data`. The raw MIME is in the `email` field.
+**Detalle clave**: Incluso en modo "raw", **no** es un POST JSON. Siempre es `multipart/form-data`. El MIME raw está en el campo `email`.
 
-#### Critical Consideration for This POC — MX Record Conflict
+#### Consideración crítica para esta POC — Conflicto de registros MX
 
-**This is the single biggest architectural decision.**
+**Esta es la decisión arquitectónica más importante.**
 
-Currently, `caminosdelassierras.com.ar` has MX records pointing to Google Workspace (e.g., `aspmx.l.google.com`, etc.). For SendGrid Inbound Parse to receive mail at `info@caminosdelassierras.com.ar`, one of the following must be true:
+Actualmente, `caminosdelassierras.com.ar` tiene registros MX que apuntan a Google Workspace (ej. `aspmx.l.google.com`, etc.). Para que SendGrid Inbound Parse reciba mail en `info@caminosdelassierras.com.ar`, una de las siguientes opciones debe ser verdadera:
 
-**Option 1: Change MX for the root domain** → All email for `@caminosdelassierras.com.ar` goes to SendGrid, not Google. This **breaks Google Workspace email** for all users. **Not viable** if the company uses Google Workspace for other mailboxes.
+**Opción 1: Cambiar MX del dominio raíz** → Todo el email para `@caminosdelassierras.com.ar` va a SendGrid, no a Google. Esto **rompe el email de Google Workspace** para todos los usuarios. **No viable** si la empresa usa Google Workspace para otras casillas.
 
-**Option 2: Use a subdomain for inbound parse** → e.g., `parse.caminosdelassierras.com.ar` with MX → `mx.sendgrid.net`. Then SendGrid receives mail at `anything@parse.caminosdelassierras.com.ar`. But the actual address `info@caminosdelassierras.com.ar` still delivers to Google Workspace.
+**Opción 2: Usar un subdominio para inbound parse** → ej. `parse.caminosdelassierras.com.ar` con MX → `mx.sendgrid.net`. Entonces SendGrid recibe mail en `anything@parse.caminosdelassierras.com.ar`. Pero la dirección real `info@caminosdelassierras.com.ar` sigue entregando a Google Workspace.
 
-**Option 3: Google Workspace routing** → Keep MX pointing to Google. In Google Workspace Admin, set up a **routing rule** for `info@caminosdelassierras.com.ar` to forward all inbound mail to an address on the SendGrid-parsed subdomain (e.g., `info@parse.caminosdelassierras.com.ar`), which then triggers the Inbound Parse webhook. Alternatively, Google Workspace can forward directly to your NestJS webhook endpoint without involving SendGrid Inbound Parse at all.
+**Opción 3: Routing de Google Workspace** → Mantener MX apuntando a Google. En Google Workspace Admin, configurar una **regla de routing** para `info@caminosdelassierras.com.ar` que reenvíe todo el mail entrante a una dirección en el subdominio parseado por SendGrid (ej. `info@parse.caminosdelassierras.com.ar`), que luego dispara el Inbound Parse webhook. Alternativamente, Google Workspace puede reenviar directamente a tu endpoint de webhook NestJS sin involucrar SendGrid Inbound Parse.
 
-**Option 4: Google Workspace forwarding (simpler)** → Set up forwarding in Google Workspace (either at the user level or via routing rules in Admin Console) to forward copies of emails arriving at `info@` to your backend webhook directly. Then use SendGrid only for *sending* replies. This avoids the MX conflict entirely.
+**Opción 4: Forwarding de Google Workspace (más simple)** → Configurar forwarding en Google Workspace (a nivel de usuario o vía reglas de routing en Admin Console) para reenviar copias de los emails que llegan a `info@` a tu webhook de backend directamente. Luego usar SendGrid solo para *enviar* respuestas. Esto evita el conflicto MX por completo.
 
-**Recommendation for this POC**: Option 4 is most pragmatic. Use Google Workspace routing for inbound, SendGrid for outbound. Alternatively, Option 3 if you want SendGrid parsing the inbound emails.
+**Recomendación para esta POC**: La Opción 4 es la más pragmática. Usar routing de Google Workspace para inbound, SendGrid para outbound. Alternativamente, Opción 3 si quieres que SendGrid parsee los emails entrantes.
 
 ---
 
-### A2. Sending from External Domain — DNS Records Required
+### A2. Envío desde dominio externo — Registros DNS requeridos
 
-To send emails as `@caminosdelassierras.com.ar` via SendGrid with proper authentication (essential since DMARC is `p=reject`), you need **Domain Authentication** (formerly "Whitelabeling").
+Para enviar emails como `@caminosdelassierras.com.ar` vía SendGrid con autenticación adecuada (esencial dado que DMARC es `p=reject`), necesitas **Domain Authentication** (antes "Whitelabeling").
 
-#### Required DNS Records
+#### Registros DNS requeridos
 
-SendGrid's Domain Authentication requires you to add **three CNAME records** to your domain's DNS (in Cloudflare):
+Domain Authentication de SendGrid requiere que añadas **tres registros CNAME** al DNS de tu dominio (en Cloudflare):
 
 ```
 # CNAME records for DKIM signing
@@ -94,66 +94,66 @@ s1._domainkey.caminosdelassierras.com.ar  →  s1.domainkey.u1234567.wl.sendgrid
 s2._domainkey.caminosdelassierras.com.ar  →  s2.domainkey.u1234567.wl.sendgrid.net
 ```
 
-(The exact subdomains and values are generated by SendGrid during setup and are unique to your account.)
+(Los subdominios y valores exactos son generados por SendGrid durante el setup y son únicos para tu cuenta.)
 
-**What these do:**
-- `em1234.*` → This is a CNAME that resolves to a SendGrid TXT record containing an SPF `include`. When receiving mail servers look up the SPF for your domain, this path eventually leads to `include:sendgrid.net` being authorized.
-- `s1._domainkey.*` and `s2._domainkey.*` → These are CNAME records that point to SendGrid-hosted DKIM public keys. SendGrid signs outgoing mail with the corresponding private keys.
+**Qué hacen estos registros:**
+- `em1234.*` → Es un CNAME que resuelve a un registro TXT de SendGrid que contiene un include SPF. Cuando los servidores de mail receptores buscan el SPF de tu dominio, esta ruta eventualmente lleva a que `include:sendgrid.net` esté autorizado.
+- `s1._domainkey.*` y `s2._domainkey.*` → Son registros CNAME que apuntan a claves públicas DKIM alojadas por SendGrid. SendGrid firma el mail saliente con las claves privadas correspondientes.
 
-#### SPF Considerations
-Since Google Workspace is already using SPF for `caminosdelassierras.com.ar`, the existing SPF record likely looks like:
+#### Consideraciones SPF
+Dado que Google Workspace ya usa SPF para `caminosdelassierras.com.ar`, el registro SPF existente probablemente se ve así:
 
 ```
 v=spf1 include:_spf.google.com ~all
 ```
 
-You need to **add** SendGrid's include:
+Necesitas **añadir** el include de SendGrid:
 
 ```
 v=spf1 include:_spf.google.com include:sendgrid.net ~all
 ```
 
-**Important**: SPF has a 10-DNS-lookup limit. `include:_spf.google.com` already consumes several lookups. Adding `include:sendgrid.net` adds more. You should verify the total doesn't exceed 10, or use an SPF flattening service.
+**Importante**: SPF tiene un límite de 10 lookups DNS. `include:_spf.google.com` ya consume varios. Añadir `include:sendgrid.net` añade más. Debes verificar que el total no exceda 10, o usar un servicio de SPF flattening.
 
-**Note on Cloudflare**: When adding CNAME records for SendGrid in Cloudflare, you must set them to **DNS Only (grey cloud)**, not Proxied (orange cloud). Cloudflare proxying breaks DNS-based email authentication.
+**Nota sobre Cloudflare**: Al añadir registros CNAME para SendGrid en Cloudflare, debes configurarlos como **DNS Only (nube gris)**, no Proxied (nube naranja). El proxy de Cloudflare rompe la autenticación de email basada en DNS.
 
 #### DKIM
-Handled automatically via the CNAME records above. SendGrid signs with its own private key; the public key is served through the CNAME chain. Both `s1` and `s2` selectors are used for key rotation.
+Se maneja automáticamente vía los registros CNAME anteriores. SendGrid firma con su propia clave privada; la clave pública se sirve a través de la cadena CNAME. Ambos selectores `s1` y `s2` se usan para rotación de claves.
 
 #### DMARC
-DMARC alignment is the critical concern here since the domain has `p=reject`.
+La alineación DMARC es la preocupación crítica aquí dado que el dominio tiene `p=reject`.
 
-- **DKIM alignment**: If SendGrid signs with `d=caminosdelassierras.com.ar` (which it does when Domain Authentication is set up correctly via the CNAMEs), DKIM alignment passes.
-- **SPF alignment**: The `MAIL FROM` (envelope sender / Return-Path) domain must align with the `From` header domain. SendGrid by default uses its own bounce handling domain for the envelope sender (e.g., `bounces.sendgrid.net`). This means SPF alignment will **fail** by default. However, DMARC only requires **one** of SPF or DKIM to align, so DKIM alignment alone is sufficient.
-- **To get SPF alignment too** (belt and suspenders): You can set up **Link Branding** and configure a custom Return-Path domain (available on Pro plan and above). This makes the envelope sender use your domain.
+- **Alineación DKIM**: Si SendGrid firma con `d=caminosdelassierras.com.ar` (lo cual hace cuando Domain Authentication está configurado correctamente vía los CNAMEs), la alineación DKIM pasa.
+- **Alineación SPF**: El dominio `MAIL FROM` (envelope sender / Return-Path) debe alinearse con el dominio del header `From`. SendGrid por defecto usa su propio dominio de manejo de bounce para el envelope sender (ej. `bounces.sendgrid.net`). Esto significa que la alineación SPF **fallará** por defecto. Sin embargo, DMARC solo requiere que **uno** de SPF o DKIM alinee, así que la alineación DKIM sola es suficiente.
+- **Para obtener alineación SPF también** (cinturón y tirantes): Puedes configurar **Link Branding** y configurar un dominio Return-Path personalizado (disponible en plan Pro y superiores). Esto hace que el envelope sender use tu dominio.
 
-**Bottom line**: With Domain Authentication CNAMEs properly configured, DKIM alignment passes, and emails sent via SendGrid as `@caminosdelassierras.com.ar` will **pass DMARC even with `p=reject`**.
-
----
-
-### A3. Can It Send from a Domain You Don't Own?
-
-**Technically yes, practically constrained:**
-
-- SendGrid **does not** require you to prove domain ownership in the registrar sense. It requires you to add DNS records (CNAMEs) to the domain's DNS zone.
-- If you have **DNS access** (which in this case you do — via Cloudflare), you can authenticate any domain.
-- If you do NOT have DNS access, you can still send from the domain, but:
-  - Emails will be signed with SendGrid's default DKIM (`d=sendgrid.net`), not your domain.
-  - SPF will reference `sendgrid.net`.
-  - **DMARC alignment will fail** → With `p=reject`, these emails will be rejected by receiving servers.
-
-**Minimum DNS configuration needed:**
-- The 3 CNAME records for Domain Authentication (DKIM + SPF pass-through).
-- SPF record update to include `sendgrid.net`.
-- That's it — about 4 DNS changes total.
+**Conclusión**: Con los CNAMEs de Domain Authentication correctamente configurados, la alineación DKIM pasa, y los emails enviados vía SendGrid como `@caminosdelassierras.com.ar` **pasarán DMARC incluso con `p=reject`**.
 
 ---
 
-### A4. Reply-To Handling
+### A3. ¿Puede enviar desde un dominio que no posees?
 
-**Yes, Reply-To can be set independently from the From address.**
+**Técnicamente sí, prácticamente limitado:**
 
-In the SendGrid v3 Mail Send API:
+- SendGrid **no** requiere que demuestres propiedad del dominio en el sentido del registrador. Requiere que añadas registros DNS (CNAMEs) a la zona DNS del dominio.
+- Si tienes **acceso DNS** (que en este caso tienes — vía Cloudflare), puedes autenticar cualquier dominio.
+- Si NO tienes acceso DNS, aún puedes enviar desde el dominio, pero:
+  - Los emails se firmarán con el DKIM por defecto de SendGrid (`d=sendgrid.net`), no tu dominio.
+  - SPF hará referencia a `sendgrid.net`.
+  - **La alineación DMARC fallará** → Con `p=reject`, estos emails serán rechazados por los servidores receptores.
+
+**Configuración DNS mínima necesaria:**
+- Los 3 registros CNAME para Domain Authentication (DKIM + pass-through SPF).
+- Actualización del registro SPF para incluir `sendgrid.net`.
+- Eso es todo — unas 4 cambios DNS en total.
+
+---
+
+### A4. Manejo de Reply-To
+
+**Sí, Reply-To puede configurarse independientemente de la dirección From.**
+
+En la API v3 Mail Send de SendGrid:
 
 ```json
 {
@@ -178,19 +178,19 @@ In the SendGrid v3 Mail Send API:
 }
 ```
 
-- `reply_to` — Sets a single Reply-To address.
-- `reply_to_list` — Sets multiple Reply-To addresses (max 1000). If both are provided, `reply_to_list` takes precedence.
-- These are completely independent of the `from` field.
+- `reply_to` — Establece una única dirección Reply-To.
+- `reply_to_list` — Establece múltiples direcciones Reply-To (máx. 1000). Si ambos se proporcionan, `reply_to_list` tiene precedencia.
+- Son completamente independientes del campo `from`.
 
-**Use case for this POC**: You could send `From: info@caminosdelassierras.com.ar` with `Reply-To: info@caminosdelassierras.com.ar` (or even a different address that routes to your processing system). This is fully supported.
+**Caso de uso para esta POC**: Podrías enviar `From: info@caminosdelassierras.com.ar` con `Reply-To: info@caminosdelassierras.com.ar` (o incluso una dirección diferente que enrute a tu sistema de procesamiento). Esto está totalmente soportado.
 
 ---
 
-### A5. Custom Headers Support
+### A5. Soporte de headers personalizados
 
-**Yes, fully supported.**
+**Sí, totalmente soportado.**
 
-The Mail Send API has a `headers` object where you can set arbitrary custom headers:
+La API Mail Send tiene un objeto `headers` donde puedes establecer headers personalizados arbitrarios:
 
 ```json
 {
@@ -209,33 +209,33 @@ The Mail Send API has a `headers` object where you can set arbitrary custom head
 }
 ```
 
-- Headers can be set at the **personalization level** (per-recipient) or at the **message level** (global).
-- You can set threading headers like `In-Reply-To` and `References` via custom headers.
-- **Restriction**: You cannot override certain reserved headers that SendGrid manages (e.g., `Date`, `From`, `To`, `Subject` are set via their dedicated fields). However, `Message-ID`, `In-Reply-To`, and `References` **can** be set via custom headers.
+- Los headers pueden establecerse a nivel de **personalización** (por destinatario) o a nivel de **mensaje** (global).
+- Puedes establecer headers de threading como `In-Reply-To` y `References` vía headers personalizados.
+- **Restricción**: No puedes sobrescribir ciertos headers reservados que SendGrid gestiona (ej. `Date`, `From`, `To`, `Subject` se establecen vía sus campos dedicados). Sin embargo, `Message-ID`, `In-Reply-To` y `References` **sí pueden** establecerse vía headers personalizados.
 
 ---
 
-## Challenge B — Thread Tracking
+## Desafío B — Thread tracking
 
-### B1. Automatic Threading
+### B1. Threading automático
 
-**SendGrid does NOT automatically maintain threading.** It is a transactional/marketing email API — it does not have a concept of "conversations" or "threads" built in.
+**SendGrid NO mantiene threading automáticamente.** Es una API de email transaccional/marketing — no tiene un concepto de "conversaciones" o "threads" incorporado.
 
-What SendGrid does automatically:
-- **Generates a `Message-ID` header** for every outgoing email (e.g., `<filter_id.smtpapi_id@ismtpd-xxx>`).
-- **Does NOT set `In-Reply-To` or `References`** automatically. You must set these yourself.
+Lo que SendGrid hace automáticamente:
+- **Genera un header `Message-ID`** para cada email saliente (ej. `<filter_id.smtpapi_id@ismtpd-xxx>`).
+- **NO establece `In-Reply-To` ni `References`** automáticamente. Debes establecerlos tú mismo.
 
-**You are responsible for threading.** This means your NestJS backend must:
-1. When receiving an inbound email, extract the `Message-ID`, `In-Reply-To`, `References`, and `Subject` headers.
-2. Store these in your database.
-3. When sending a reply, set:
+**Eres responsable del threading.** Esto significa que tu backend NestJS debe:
+1. Al recibir un email entrante, extraer los headers `Message-ID`, `In-Reply-To`, `References` y `Subject`.
+2. Almacenarlos en tu base de datos.
+3. Al enviar una respuesta, establecer:
    - `In-Reply-To: <original-message-id>`
    - `References: <original-message-id> <any-previous-message-ids>`
-   - `Subject: Re: <original-subject>` (preserve the original subject with `Re:` prefix)
+   - `Subject: Re: <original-subject>` (preservar el asunto original con prefijo `Re:`)
 
-### B2. Custom Message-ID
+### B2. Message-ID personalizado
 
-**Yes, you can set a custom `Message-ID`.**
+**Sí, puedes establecer un `Message-ID` personalizado.**
 
 ```json
 {
@@ -245,26 +245,26 @@ What SendGrid does automatically:
 }
 ```
 
-- The Message-ID should follow RFC 5322 format: `<unique-part@domain>`.
-- Using your own domain in the Message-ID is recommended for consistency.
-- **Gotcha**: Some older SendGrid documentation suggests you cannot override Message-ID. In practice, setting it via the `headers` field in the v3 API **does** work. However, some users have reported inconsistencies — **verify this in your POC testing**.
-- Alternative: If custom Message-ID doesn't stick, you can use the `X-Message-Id` header that SendGrid adds to every message. This header contains SendGrid's internal message ID and is returned in webhook events.
+- El Message-ID debe seguir el formato RFC 5322: `<unique-part@domain>`.
+- Usar tu propio dominio en el Message-ID es recomendado para consistencia.
+- **Consideración**: Algunas documentaciones antiguas de SendGrid sugieren que no puedes sobrescribir Message-ID. En la práctica, establecerlo vía el campo `headers` en la API v3 **sí** funciona. Sin embargo, algunos usuarios han reportado inconsistencias — **verifica esto en las pruebas de tu POC**.
+- Alternativa: Si el Message-ID personalizado no se mantiene, puedes usar el header `X-Message-Id` que SendGrid añade a cada mensaje. Este header contiene el ID de mensaje interno de SendGrid y se devuelve en los eventos del webhook.
 
-### B3. Reply Mechanism for Thread Continuity
+### B3. Mecanismo de respuesta para continuidad del thread
 
-To maintain thread continuity in Gmail, Outlook, and Apple Mail, you need:
+Para mantener la continuidad del thread en Gmail, Outlook y Apple Mail, necesitas:
 
-**Gmail threading criteria** (Gmail uses a combination):
-1. Same `Subject` line (ignoring `Re:`/`Fwd:` prefixes) — necessary but not sufficient.
-2. `References` or `In-Reply-To` headers referencing a Message-ID already in the thread.
-3. Sent to/from same participants.
+**Criterios de threading de Gmail** (Gmail usa una combinación):
+1. Misma línea de `Subject` (ignorando prefijos `Re:`/`Fwd:`) — necesario pero no suficiente.
+2. Headers `References` o `In-Reply-To` que referencien un Message-ID ya en el thread.
+3. Enviado a/desde los mismos participantes.
 
-**Outlook threading criteria**:
-1. Same normalized `Subject` (the `Thread-Topic` header if present).
-2. `In-Reply-To` and `References` headers.
-3. Outlook also uses `Thread-Index` header (Microsoft proprietary) for precise threading.
+**Criterios de threading de Outlook**:
+1. Mismo `Subject` normalizado (el header `Thread-Topic` si está presente).
+2. Headers `In-Reply-To` y `References`.
+3. Outlook también usa el header `Thread-Index` (propietario de Microsoft) para threading preciso.
 
-**Implementation in your NestJS backend:**
+**Implementación en tu backend NestJS:**
 
 ```typescript
 // When sending a reply via SendGrid
@@ -282,56 +282,56 @@ const msg = {
 await sgMail.send(msg);
 ```
 
-**This works reliably** for Gmail and most clients. For Outlook, adding `Thread-Topic` and `Thread-Index` headers can improve threading but is not strictly required.
+**Esto funciona de forma fiable** para Gmail y la mayoría de clientes. Para Outlook, añadir headers `Thread-Topic` y `Thread-Index` puede mejorar el threading pero no es estrictamente requerido.
 
-### B4. Threading Limitations
+### B4. Limitaciones del threading
 
-1. **No built-in conversation tracking**: SendGrid has no concept of threads or conversations. Your application must track all Message-IDs and build the References chain.
-2. **Message-ID reliability**: If SendGrid overrides your custom Message-ID in edge cases, thread continuity breaks. Test this thoroughly.
-3. **Subject line sensitivity**: If the subject is modified (e.g., by your system), Gmail may break the thread.
-4. **Forwarded messages**: Thread continuity for forwarded messages is harder to maintain and depends on client behavior.
-5. **Open/click tracking can break threading**: SendGrid's open/click tracking modifies the HTML body (adds tracking pixel, rewrites links). This doesn't directly break threading but can alter the visual appearance of quoted text in replies.
+1. **Sin tracking de conversación incorporado**: SendGrid no tiene concepto de threads o conversaciones. Tu aplicación debe rastrear todos los Message-IDs y construir la cadena References.
+2. **Fiabilidad del Message-ID**: Si SendGrid sobrescribe tu Message-ID personalizado en casos límite, la continuidad del thread se rompe. Prueba esto exhaustivamente.
+3. **Sensibilidad de la línea de asunto**: Si el asunto se modifica (ej. por tu sistema), Gmail puede romper el thread.
+4. **Mensajes reenviados**: La continuidad del thread para mensajes reenviados es más difícil de mantener y depende del comportamiento del cliente.
+5. **El tracking de open/click puede romper el threading**: El tracking de open/click de SendGrid modifica el cuerpo HTML (añade pixel de tracking, reescribe links). Esto no rompe el threading directamente pero puede alterar la apariencia visual del texto citado en las respuestas.
 
 ---
 
-## Challenge C — Email Tracking
+## Desafío C — Email tracking
 
-### C1. Available Tracking Features
+### C1. Funcionalidades de tracking disponibles
 
-| Feature | Description |
-|---------|-------------|
-| **Delivered** | Email was accepted by the receiving server (not necessarily to inbox) |
-| **Open** | Recipient opened the email (pixel-based, see C4) |
-| **Click** | Recipient clicked a tracked link in the email |
-| **Bounce** | Email bounced — hard bounce (invalid address) or soft bounce (temporary failure) |
-| **Dropped** | SendGrid decided not to send (e.g., recipient on suppression list, invalid email) |
-| **Deferred** | Receiving server temporarily rejected; SendGrid will retry |
-| **Spam Report** | Recipient marked email as spam (via ISP feedback loop) |
-| **Unsubscribe** | Recipient clicked the unsubscribe link (if using SendGrid's subscription management) |
-| **Group Unsubscribe** | Recipient unsubscribed from a specific group |
-| **Group Resubscribe** | Recipient resubscribed to a group |
-| **Processed** | SendGrid accepted the email for delivery (internal event) |
+| Funcionalidad | Descripción |
+|---------------|-------------|
+| **Delivered** | El email fue aceptado por el servidor receptor (no necesariamente en inbox) |
+| **Open** | El destinatario abrió el email (basado en pixel, ver C4) |
+| **Click** | El destinatario hizo click en un link rastreado en el email |
+| **Bounce** | El email rebotó — hard bounce (dirección inválida) o soft bounce (fallo temporal) |
+| **Dropped** | SendGrid decidió no enviar (ej. destinatario en lista de supresión, email inválido) |
+| **Deferred** | El servidor receptor rechazó temporalmente; SendGrid reintentará |
+| **Spam Report** | El destinatario marcó el email como spam (vía feedback loop del ISP) |
+| **Unsubscribe** | El destinatario hizo click en el link de unsubscribe (si usas gestión de suscripciones de SendGrid) |
+| **Group Unsubscribe** | El destinatario se dio de baja de un grupo específico |
+| **Group Resubscribe** | El destinatario se volvió a suscribir a un grupo |
+| **Processed** | SendGrid aceptó el email para entrega (evento interno) |
 
-### C2. Webhook Event Types (Event Webhook)
+### C2. Tipos de eventos del webhook (Event Webhook)
 
-All event types delivered via SendGrid's **Event Webhook**:
+Todos los tipos de eventos se entregan vía el **Event Webhook** de SendGrid:
 
-**Delivery Events:**
-- `processed` — Email accepted by SendGrid for delivery
-- `delivered` — Email delivered to receiving server
-- `deferred` — Temporary delivery failure, will retry
-- `bounce` — Permanent delivery failure
-- `dropped` — SendGrid will not deliver (suppression, invalid, etc.)
+**Eventos de entrega:**
+- `processed` — Email aceptado por SendGrid para entrega
+- `delivered` — Email entregado al servidor receptor
+- `deferred` — Fallo temporal de entrega, se reintentará
+- `bounce` — Fallo permanente de entrega
+- `dropped` — SendGrid no entregará (supresión, inválido, etc.)
 
-**Engagement Events:**
-- `open` — Email opened (tracking pixel loaded)
-- `click` — Link in email clicked
-- `spam_report` — Marked as spam by recipient
-- `unsubscribe` — Recipient unsubscribed
-- `group_unsubscribe` — Unsubscribed from a group
-- `group_resubscribe` — Resubscribed to a group
+**Eventos de engagement:**
+- `open` — Email abierto (pixel de tracking cargado)
+- `click` — Click en link del email
+- `spam_report` — Marcado como spam por el destinatario
+- `unsubscribe` — Destinatario se dio de baja
+- `group_unsubscribe` — Se dio de baja de un grupo
+- `group_resubscribe` — Se volvió a suscribir a un grupo
 
-**Webhook payload format** (JSON array):
+**Formato del payload del webhook** (array JSON):
 
 ```json
 [
@@ -357,28 +357,28 @@ All event types delivered via SendGrid's **Event Webhook**:
 ]
 ```
 
-**Important fields for this POC:**
-- `sg_message_id` — Correlate webhook events back to the sent email.
-- `event` — The event type.
-- `email` — The recipient.
-- `timestamp` — Unix timestamp of the event.
-- Custom `unique_args` can be passed when sending to include your own metadata (e.g., ticket ID) in all webhook events for that email.
+**Campos importantes para esta POC:**
+- `sg_message_id` — Correlacionar eventos del webhook con el email enviado.
+- `event` — El tipo de evento.
+- `email` — El destinatario.
+- `timestamp` — Timestamp Unix del evento.
+- Los `unique_args` personalizados pueden pasarse al enviar para incluir tu propia metadata (ej. ID de ticket) en todos los eventos del webhook para ese email.
 
-### C3. Tracking Inclusion by Plan
+### C3. Inclusión de tracking por plan
 
-| Feature | Free | Essentials | Pro | Premier |
-|---------|------|------------|-----|---------|
+| Funcionalidad | Free | Essentials | Pro | Premier |
+|---------------|------|------------|-----|---------|
 | Event Webhook | Yes | Yes | Yes | Yes |
 | Open Tracking | Yes | Yes | Yes | Yes |
 | Click Tracking | Yes | Yes | Yes | Yes |
 | Deliverability Insights | No | No | Yes | Yes |
 | Expert Insights | No | No | No | Yes |
 
-**All tracking features (open, click, bounce, delivered, dropped, deferred, spam report) and the Event Webhook are available on ALL plans, including the free tier.**
+**Todas las funcionalidades de tracking (open, click, bounce, delivered, dropped, deferred, spam report) y el Event Webhook están disponibles en TODOS los planes, incluyendo el free tier.**
 
-### C4. Open Tracking — How It Works
+### C4. Open tracking — Cómo funciona
 
-SendGrid inserts an invisible **tracking pixel** (1x1 transparent GIF) at the bottom of the HTML body of the email:
+SendGrid inserta un **tracking pixel** invisible (GIF transparente 1x1) al final del cuerpo HTML del email:
 
 ```html
 <img src="https://u12345.ct.sendgrid.net/wf/open?upn=UNIQUE_TRACKING_ID"
@@ -389,99 +389,99 @@ SendGrid inserts an invisible **tracking pixel** (1x1 transparent GIF) at the bo
             padding-right:0!important;padding-left:0!important;" />
 ```
 
-When the recipient's email client loads images, this pixel is fetched from SendGrid's servers, triggering the "open" event.
+Cuando el cliente de email del destinatario carga imágenes, este pixel se solicita a los servidores de SendGrid, disparando el evento "open".
 
-**Limitations:**
-- Does not work if recipient has images disabled (common in Outlook, Apple Mail privacy).
-- Apple Mail Privacy Protection (iOS 15+ / macOS Monterey+) pre-loads all images via proxy, causing false opens.
-- Some corporate email gateways strip tracking pixels.
-- Plain-text emails cannot be open-tracked (no HTML body to embed the pixel).
+**Limitaciones:**
+- No funciona si el destinatario tiene imágenes deshabilitadas (común en Outlook, privacidad de Apple Mail).
+- Apple Mail Privacy Protection (iOS 15+ / macOS Monterey+) precarga todas las imágenes vía proxy, causando opens falsos.
+- Algunos gateways corporativos eliminan los tracking pixels.
+- Los emails en texto plano no pueden rastrearse por open (no hay cuerpo HTML para embeber el pixel).
 
-### C5. Tracking Impact on Deliverability and DMARC
+### C5. Impacto del tracking en deliverability y DMARC
 
-**Click Tracking:**
-- SendGrid rewrites links to go through its tracking domain (e.g., `https://u12345.ct.sendgrid.net/ls/click?upn=...`).
-- If you set up **Link Branding**, links are rewritten through your own domain (e.g., `https://track.caminosdelassierras.com.ar/ls/click?...`). This looks more professional and avoids domain reputation issues.
-- Rewritten links through `sendgrid.net` can occasionally trigger spam filters because the link domain differs from the sender domain.
+**Click tracking:**
+- SendGrid reescribe los links para que pasen por su dominio de tracking (ej. `https://u12345.ct.sendgrid.net/ls/click?upn=...`).
+- Si configuras **Link Branding**, los links se reescriben a través de tu propio dominio (ej. `https://track.caminosdelassierras.com.ar/ls/click?...`). Esto se ve más profesional y evita problemas de reputación de dominio.
+- Los links reescritos a través de `sendgrid.net` pueden ocasionalmente disparar filtros de spam porque el dominio del link difiere del dominio del remitente.
 
-**Open Tracking:**
-- The tracking pixel domain should match your branded domain for consistency.
-- Minimal direct impact on deliverability, but some spam filters flag emails with tracking pixels from known ESP domains.
+**Open tracking:**
+- El dominio del tracking pixel debería coincidir con tu dominio branded para consistencia.
+- Impacto directo mínimo en deliverability, pero algunos filtros de spam marcan emails con tracking pixels de dominios ESP conocidos.
 
-**DMARC Impact:**
-- Click tracking via `sendgrid.net` domains does NOT affect DMARC (DMARC checks `From` header domain alignment with DKIM/SPF, not link domains in the body).
-- **However**, the visual mismatch between the sender domain and link domains can affect recipient trust and anti-phishing heuristics.
-- **Recommendation**: Set up Link Branding with a subdomain like `click.caminosdelassierras.com.ar` or `email.caminosdelassierras.com.ar` to keep everything consistent.
-
----
-
-## Pricing (updated February 2026)
-
-> **IMPORTANT UPDATE (May 2025)**: Twilio retired SendGrid's permanent free plans on May 28, 2025. After a 60-day transition period, free accounts had their email sending paused. SendGrid now only offers a **60-day free trial**, after which an upgrade to a paid plan is required to continue sending emails. [Source](https://www.twilio.com/en-us/changelog/changes-coming-to-sendgrid-s-free-plans)
-
-### Current Plans
-
-| Plan | Monthly Cost | Emails/Month | Key Features |
-|------|-------------|--------------|--------------|
-| **Free Trial (60 days)** | $0 (temporary) | 100/day (~3,000/month) | Single sender, basic APIs, **expires after 60 days** |
-| **Essentials** | Starting at $19.95/mo | 50,000 | Ticketing + chat support, no IP whitelisting, basic analytics |
-| **Pro** | Starting at $89.95/mo | 100,000 | Dedicated IP, sub-user management, advanced analytics, email validation |
-| **Premier** | Custom pricing | Custom volume | Dedicated CSM, SSO, custom features |
-
-**Note**: Pricing tiers are based on email volume. Higher volumes have lower per-email costs within each plan. The prices above are starting prices for the lowest volume in each tier. The minimum sustained cost is $19.95/month (Essentials) since the free tier is no longer permanent.
-
-### Cost Per Email (approximate)
-
-| Plan | Volume | Approx. Cost/Email |
-|------|--------|-------------------|
-| Free | 100/day | $0 |
-| Essentials 50K | 50,000/mo | ~$0.0004 |
-| Essentials 100K | 100,000/mo | ~$0.00035 |
-| Pro 100K | 100,000/mo | ~$0.0009 |
-| Pro 300K | 300,000/mo | ~$0.0005 |
-
-### Inbound Parse Availability
-
-**Inbound Parse is available on ALL plans, including the free tier.** There is no additional cost for Inbound Parse — it is a platform feature, not a paid add-on.
-
-**However**: Inbound Parse does not count against your email sending quota. It is purely for receiving/parsing. Your sending quota only applies to outbound emails.
-
-### Tracking Cost
-
-**All tracking features are included in all plans at no additional cost.** Open tracking, click tracking, event webhooks — all free with every plan.
-
-### Free Trial Details (no longer a permanent free tier)
-
-- **60-day trial only** -- after 60 days, email sending is paused and upgrade to a paid plan is required.
-- **100 emails per day** during the trial (hard limit, not 100/month).
-- Roughly 3,000 emails/month during trial period.
-- Access to all APIs (v3 Mail Send, Inbound Parse, Event Webhook).
-- Two-factor authentication required.
-- Single sender verification (can still authenticate a full domain).
-- **No dedicated IP** (shared IP pool).
-- Limited to 1 teammate.
-- Support: ticket-based during trial only.
-- **After trial expires**: Must upgrade to Essentials ($19.95/mo minimum) or higher to continue sending.
+**Impacto en DMARC:**
+- El click tracking vía dominios `sendgrid.net` NO afecta DMARC (DMARC verifica la alineación del dominio del header `From` con DKIM/SPF, no los dominios de links en el cuerpo).
+- **Sin embargo**, la discrepancia visual entre el dominio del remitente y los dominios de los links puede afectar la confianza del destinatario y las heurísticas anti-phishing.
+- **Recomendación**: Configurar Link Branding con un subdominio como `click.caminosdelassierras.com.ar` o `email.caminosdelassierras.com.ar` para mantener todo consistente.
 
 ---
 
-## Integration Details
+## Precios (actualizado febrero 2026)
 
-### Node.js SDKs
+> **ACTUALIZACIÓN IMPORTANTE (Mayo 2025)**: Twilio retiró los planes free permanentes de SendGrid el 28 de mayo de 2025. Tras un período de transición de 60 días, las cuentas free tuvieron su envío de email pausado. SendGrid ahora solo ofrece una **prueba gratuita de 60 días**, tras la cual se requiere actualizar a un plan de pago para continuar enviando emails. [Fuente](https://www.twilio.com/en-us/changelog/changes-coming-to-sendgrid-s-free-plans)
 
-**Official SDK: `@sendgrid/mail`**
+### Planes actuales
+
+| Plan | Costo mensual | Emails/mes | Funcionalidades clave |
+|------|---------------|------------|------------------------|
+| **Free Trial (60 días)** | $0 (temporal) | 100/día (~3.000/mes) | Single sender, APIs básicas, **expira tras 60 días** |
+| **Essentials** | Desde $19.95/mes | 50.000 | Ticketing + chat support, sin IP whitelisting, analytics básicos |
+| **Pro** | Desde $89.95/mes | 100.000 | IP dedicada, gestión de sub-usuarios, analytics avanzados, email validation |
+| **Premier** | Precio personalizado | Volumen personalizado | CSM dedicado, SSO, funcionalidades personalizadas |
+
+**Nota**: Los niveles de precios se basan en volumen de email. Volúmenes mayores tienen menor costo por email dentro de cada plan. Los precios anteriores son precios iniciales para el volumen más bajo en cada nivel. El costo mínimo sostenido es $19.95/mes (Essentials) ya que el free tier ya no es permanente.
+
+### Costo por email (aproximado)
+
+| Plan | Volumen | Costo aprox./email |
+|------|---------|-------------------|
+| Free | 100/día | $0 |
+| Essentials 50K | 50.000/mes | ~$0.0004 |
+| Essentials 100K | 100.000/mes | ~$0.00035 |
+| Pro 100K | 100.000/mes | ~$0.0009 |
+| Pro 300K | 300.000/mes | ~$0.0005 |
+
+### Disponibilidad de Inbound Parse
+
+**Inbound Parse está disponible en TODOS los planes, incluyendo el free tier.** No hay costo adicional por Inbound Parse — es una funcionalidad de plataforma, no un add-on de pago.
+
+**Sin embargo**: Inbound Parse no cuenta contra tu cuota de envío de email. Es puramente para recibir/parsear. Tu cuota de envío solo aplica a emails outbound.
+
+### Costo del tracking
+
+**Todas las funcionalidades de tracking están incluidas en todos los planes sin costo adicional.** Open tracking, click tracking, event webhooks — todo gratis con cada plan.
+
+### Detalles del free trial (ya no hay free tier permanente)
+
+- **Solo 60 días de prueba** — tras 60 días, el envío de email se pausa y se requiere actualizar a un plan de pago.
+- **100 emails por día** durante la prueba (límite duro, no 100/mes).
+- Aproximadamente 3.000 emails/mes durante el período de prueba.
+- Acceso a todas las APIs (v3 Mail Send, Inbound Parse, Event Webhook).
+- Autenticación de dos factores requerida.
+- Verificación de single sender (aún puedes autenticar un dominio completo).
+- **Sin IP dedicada** (pool de IP compartida).
+- Limitado a 1 teammate.
+- Soporte: solo por tickets durante la prueba.
+- **Tras expirar la prueba**: Debe actualizar a Essentials ($19.95/mes mínimo) o superior para continuar enviando.
+
+---
+
+## Detalles de integración
+
+### SDKs de Node.js
+
+**SDK oficial: `@sendgrid/mail`**
 
 ```bash
 npm install @sendgrid/mail
 ```
 
-Additional packages:
-- `@sendgrid/client` — Low-level REST client for any SendGrid API endpoint.
-- `@sendgrid/helpers` — Utility classes for building mail objects.
-- `@sendgrid/inbound-mail-parser` — Parser helper for Inbound Parse webhook payloads.
-- `@sendgrid/eventwebhook` — Helper for verifying Event Webhook signatures.
+Paquetes adicionales:
+- `@sendgrid/client` — Cliente REST de bajo nivel para cualquier endpoint de API de SendGrid.
+- `@sendgrid/helpers` — Clases de utilidad para construir objetos de mail.
+- `@sendgrid/inbound-mail-parser` — Helper parser para payloads del webhook Inbound Parse.
+- `@sendgrid/eventwebhook` — Helper para verificar firmas del Event Webhook.
 
-**Sending email example (NestJS):**
+**Ejemplo de envío de email (NestJS):**
 
 ```typescript
 import * as sgMail from '@sendgrid/mail';
@@ -522,37 +522,37 @@ const [response] = await sgMail.send(msg);
 
 ### REST API vs SMTP
 
-**Both are supported:**
+**Ambos están soportados:**
 
-| Method | Endpoint | Best For |
-|--------|----------|----------|
-| **REST API (v3)** | `POST https://api.sendgrid.com/v3/mail/send` | Programmatic sending, full feature access, recommended for NestJS |
-| **SMTP** | `smtp.sendgrid.net:587` (STARTTLS) or `:465` (SSL) | Legacy systems, simple integrations |
+| Método | Endpoint | Mejor para |
+|--------|----------|------------|
+| **REST API (v3)** | `POST https://api.sendgrid.com/v3/mail/send` | Envío programático, acceso completo a funcionalidades, recomendado para NestJS |
+| **SMTP** | `smtp.sendgrid.net:587` (STARTTLS) o `:465` (SSL) | Sistemas legacy, integraciones simples |
 
-**REST API advantages** (recommended for this POC):
-- Full access to all features (categories, custom args, personalizations, etc.).
-- Better error handling (HTTP status codes + JSON error details).
-- No SMTP connection management overhead.
-- Supports batch sending via `personalizations` array.
+**Ventajas de REST API** (recomendado para esta POC):
+- Acceso completo a todas las funcionalidades (categorías, custom args, personalizaciones, etc.).
+- Mejor manejo de errores (códigos de estado HTTP + detalles de error JSON).
+- Sin sobrecarga de gestión de conexión SMTP.
+- Soporta batch sending vía array `personalizations`.
 
-**SMTP details** (if needed):
+**Detalles SMTP** (si se necesita):
 - Host: `smtp.sendgrid.net`
-- Ports: 25, 587 (STARTTLS), 465 (SSL/TLS), 2525 (alternative)
-- Username: `apikey` (literal string "apikey")
-- Password: Your SendGrid API key
-- Custom headers can be set via `X-SMTPAPI` header (JSON blob).
+- Puertos: 25, 587 (STARTTLS), 465 (SSL/TLS), 2525 (alternativo)
+- Username: `apikey` (string literal "apikey")
+- Password: Tu API key de SendGrid
+- Los headers personalizados pueden establecerse vía header `X-SMTPAPI` (blob JSON).
 
-### Webhook Formats
+### Formatos de webhook
 
-#### Inbound Parse Webhook (receiving email)
-- **Method**: POST
+#### Inbound Parse Webhook (recibir email)
+- **Método**: POST
 - **Content-Type**: `multipart/form-data`
-- **Authentication**: No built-in auth. You should:
-  - Use a secret token in the webhook URL path (e.g., `https://api.yourapp.com/webhooks/sendgrid/inbound/SECRET_TOKEN`).
-  - Verify sender IP is from SendGrid's IP range.
-- **No retry mechanism**: If your server returns non-2xx, **the email is lost**. SendGrid does not retry Inbound Parse webhooks.
+- **Autenticación**: Sin auth incorporada. Deberías:
+  - Usar un token secreto en la ruta del webhook (ej. `https://api.yourapp.com/webhooks/sendgrid/inbound/SECRET_TOKEN`).
+  - Verificar que la IP del remitente esté en el rango de IPs de SendGrid.
+- **Sin mecanismo de retry**: Si tu servidor devuelve algo distinto de 2xx, **el email se pierde**. SendGrid no reintenta los webhooks de Inbound Parse.
 
-**NestJS controller example:**
+**Ejemplo de controlador NestJS:**
 
 ```typescript
 import { Controller, Post, Body, UseInterceptors, UploadedFiles } from '@nestjs/common';
@@ -594,12 +594,12 @@ export class InboundParseController {
 }
 ```
 
-#### Event Webhook (tracking events)
-- **Method**: POST
+#### Event Webhook (eventos de tracking)
+- **Método**: POST
 - **Content-Type**: `application/json`
-- **Format**: JSON array of event objects (batched, up to several hundred events per POST).
-- **Authentication**: SendGrid signs Event Webhook payloads with an **ECDSA signature** (since 2020). You should verify the signature using the `@sendgrid/eventwebhook` package.
-- **Retry mechanism**: SendGrid retries on non-2xx responses with exponential backoff.
+- **Formato**: Array JSON de objetos de evento (en batch, hasta varios cientos de eventos por POST).
+- **Autenticación**: SendGrid firma los payloads del Event Webhook con una **firma ECDSA** (desde 2020). Deberías verificar la firma usando el paquete `@sendgrid/eventwebhook`.
+- **Mecanismo de retry**: SendGrid reintenta en respuestas no 2xx con exponential backoff.
 
 ```typescript
 import { Controller, Post, Body, Headers, HttpCode } from '@nestjs/common';
@@ -669,9 +669,9 @@ interface SendGridEvent {
 
 ---
 
-## Architecture Recommendation for This POC
+## Arquitectura recomendada para esta POC
 
-Given the constraints (Google Workspace, Cloudflare DNS, DMARC `p=reject`, NestJS backend):
+Dadas las restricciones (Google Workspace, Cloudflare DNS, DMARC `p=reject`, backend NestJS):
 
 ```mermaid
 flowchart TD
@@ -682,7 +682,7 @@ flowchart TD
     SG --> Events["Event Webhook -> NestJS<br/>tracks delivered, open,<br/>click, bounce"]
 ```
 
-### DNS Changes Required in Cloudflare
+### Cambios DNS requeridos en Cloudflare
 
 ```text
 # Existing (keep):
@@ -708,30 +708,30 @@ CNAME  12345678.caminosdelassierras.com.ar → sendgrid.net  (DNS Only)
 
 ---
 
-## Key Gotchas and Limitations
+## Consideraciones y limitaciones clave
 
-1. **Inbound Parse has NO retry**: If your webhook is down, inbound emails are **permanently lost**. Build redundancy (e.g., Google Workspace keeps a copy if you use forwarding rather than MX redirection).
+1. **Inbound Parse NO tiene retry**: Si tu webhook está caído, los emails entrantes se **pierden permanentemente**. Construye redundancia (ej. Google Workspace mantiene una copia si usas forwarding en lugar de redirección MX).
 
-2. **MX record conflict**: You cannot have SendGrid Inbound Parse and Google Workspace receiving mail on the same domain simultaneously. Use subdomain or forwarding strategy.
+2. **Conflicto de registros MX**: No puedes tener SendGrid Inbound Parse y Google Workspace recibiendo mail en el mismo dominio simultáneamente. Usa estrategia de subdominio o forwarding.
 
-3. **No permanent free tier**: SendGrid's free plans were retired in May 2025. The free trial lasts only 60 days, after which sending is paused. For a short POC this may be sufficient, but for ongoing testing, Essentials ($19.95/mo) is required.
+3. **Sin free tier permanente**: Los planes free de SendGrid fueron retirados en mayo 2025. La prueba gratuita dura solo 60 días, tras los cuales el envío se pausa. Para una POC corta puede ser suficiente, pero para pruebas continuas se requiere Essentials ($19.95/mes).
 
-4. **Shared IP reputation on Free/Essentials**: Your deliverability depends on other senders on the same IP. For production with `p=reject` DMARC, consider Pro plan with dedicated IP.
+4. **Reputación de IP compartida en Free/Essentials**: Tu deliverability depende de otros remitentes en la misma IP. Para producción con DMARC `p=reject`, considera plan Pro con IP dedicada.
 
-5. **Open tracking is unreliable**: Apple Mail Privacy Protection, image blocking, and corporate proxies make open rate metrics unreliable (typically 30-50% of actual opens are tracked).
+5. **El open tracking es poco fiable**: Apple Mail Privacy Protection, bloqueo de imágenes y proxies corporativos hacen que las métricas de open rate sean poco fiables (típicamente se rastrea el 30-50% de los opens reales).
 
-6. **Event Webhook batching**: Events are batched and may arrive with delays (typically seconds, but can be minutes during high load). Do not rely on real-time event delivery.
+6. **Batching del Event Webhook**: Los eventos se envían en batch y pueden llegar con retrasos (típicamente segundos, pero pueden ser minutos en alta carga). No dependas de entrega de eventos en tiempo real.
 
-7. **Cloudflare proxy must be OFF**: CNAME records for SendGrid authentication MUST be set to "DNS Only" (grey cloud) in Cloudflare. Proxying breaks DKIM/SPF verification.
+7. **El proxy de Cloudflare debe estar OFF**: Los registros CNAME para autenticación de SendGrid DEBEN configurarse como "DNS Only" (nube gris) en Cloudflare. El proxying rompe la verificación DKIM/SPF.
 
-8. **SPF lookup limit**: Adding `include:sendgrid.net` adds DNS lookups. Combined with Google Workspace's SPF includes, you may approach the 10-lookup limit. Test with SPF checking tools.
+8. **Límite de lookups SPF**: Añadir `include:sendgrid.net` añade lookups DNS. Combinado con los includes SPF de Google Workspace, puedes acercarte al límite de 10 lookups. Prueba con herramientas de verificación SPF.
 
-9. **Custom Message-ID behavior**: While the API accepts custom `Message-ID` headers, verify in testing that SendGrid does not override or append to it. This has been inconsistent in some reports.
+9. **Comportamiento del Message-ID personalizado**: Aunque la API acepta headers personalizados `Message-ID`, verifica en las pruebas que SendGrid no lo sobrescriba o le añada algo. Esto ha sido inconsistente en algunos reportes.
 
-10. **Rate limits**: The v3 Mail Send API has rate limits. Free tier is limited to ~100 emails/day. Paid plans vary but typically allow burst sending of several hundred/sec.
+10. **Rate limits**: La API v3 Mail Send tiene rate limits. El free tier está limitado a ~100 emails/día. Los planes de pago varían pero típicamente permiten envío burst de varios cientos/seg.
 
-11. **DMARC with `p=reject`**: This is the strictest DMARC policy. Domain Authentication via CNAMEs is **mandatory** — without it, every email you send via SendGrid as `@caminosdelassierras.com.ar` will be rejected by receiving mail servers.
+11. **DMARC con `p=reject`**: Esta es la política DMARC más estricta. Domain Authentication vía CNAMEs es **obligatoria** — sin ella, cada email que envíes vía SendGrid como `@caminosdelassierras.com.ar` será rechazado por los servidores de mail receptores.
 
-12. **Inbound Parse size limit**: Maximum email size for Inbound Parse is **30 MB** (including attachments).
+12. **Límite de tamaño de Inbound Parse**: El tamaño máximo de email para Inbound Parse es **30 MB** (incluyendo adjuntos).
 
-13. **Webhook timeout**: SendGrid expects your webhook to respond within **3 seconds** for Inbound Parse and **5 seconds** for Event Webhook. If processing takes longer, return 200 immediately and process asynchronously.
+13. **Timeout del webhook**: SendGrid espera que tu webhook responda en **3 segundos** para Inbound Parse y **5 segundos** para Event Webhook. Si el procesamiento toma más tiempo, devuelve 200 inmediatamente y procesa de forma asíncrona.
