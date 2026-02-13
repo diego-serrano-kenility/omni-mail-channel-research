@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:www.brevo.com)",
+      "WebFetch(domain:developers.brevo.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:nodemailer.com)",
+      "WebFetch(domain:sendgrid.com)",
+      "WebFetch(domain:docs.sendgrid.com)",
+      "WebFetch(domain:www.twilio.com)",
+      "WebFetch(domain:support.google.com)",
+      "WebFetch(domain:techcommunity.microsoft.com)",
+      "WebFetch(domain:support.sendgrid.com)",
+      "WebFetch(domain:developers.google.com)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
