@@ -49,7 +49,7 @@
 
 - Contrato existente con SendGrid, experiencia del equipo
 - Tracking mas maduro y setup mas rapido (inbound parse nativo)
-- Desde $19.95/mes
+- Desde $19.95/mes (Essentials 50K) hasta $499/mes (Pro 700K)
 
 **Opcion C (Fallback sin DNS): Gmail API** - Score 7.2/10
 
@@ -59,7 +59,7 @@
 
 **Opcion D: SMTP Directo** - Score 6.7/10
 
-- Sin cambios en DNS, zero costo, DMARC nativo
+- Sin cambios en DNS, sin costo, DMARC nativo
 - Opcion valida para vision multi-tenant futura
 - Limitado por tracking DIY y gestion de credenciales
 

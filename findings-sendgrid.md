@@ -267,9 +267,12 @@ El tracking esta **incluido en TODOS los planes** (incluyendo trial):
 | Plan | Precio/mes | Emails/mes | IP Dedicada | Notas |
 |---|---|---|---|---|
 | **Free Trial** | $0 (60 dias) | 100/dia (~3,000) | No | Temporal, no permanente |
-| **Essentials** | $19.95 | 50,000 | No | Minimo sostenido |
-| **Pro** | $89.95 | 100,000 | Incluida | Return-Path custom, analytics avanzados |
-| **Premier** | Custom | Custom | Incluida | CSM dedicado, SSO |
+| **Essentials 50K** | $19.95 | 50,000 | No | Minimo sostenido |
+| **Essentials 100K** | $34.95 | 100,000 | No | Overage: $0.0009/email |
+| **Pro 100K** | $89.95 | 100,000 | Incluida | Return-Path custom, SSO, subusers |
+| **Pro 300K** | $249.00 | 300,000 | Incluida | Analytics avanzados |
+| **Pro 700K** | $499.00 | 700,000 | Incluida | Volumen alto |
+| **Premier** | Custom | Custom | Incluida | CSM dedicado, custom SLAs |
 
 **Costo por 1,000 emails**:
 
@@ -278,7 +281,8 @@ El tracking esta **incluido en TODOS los planes** (incluyendo trial):
 | Essentials 50K | 50,000/mes | ~$0.40 |
 | Essentials 100K | 100,000/mes | ~$0.35 |
 | Pro 100K | 100,000/mes | ~$0.90 |
-| Pro 300K | 300,000/mes | ~$0.50 |
+| Pro 300K | 300,000/mes | ~$0.83 |
+| Pro 700K | 700,000/mes | ~$0.71 |
 
 **Nota**: Bajo contrato existente, los precios pueden ser mas favorables que los listados publicamente.
 
@@ -375,7 +379,7 @@ flowchart TD
 
 ## Desventajas
 
-1. **Costo**: Mas caro que Amazon SES a cualquier volumen ($0.40/1K vs $0.10/1K)
+1. **Costo**: Mas caro que Amazon SES a cualquier volumen ($0.40-0.90/1K vs $0.10/1K)
 2. **4 DNS changes por tenant** para outbound: Mas que Brevo (1) pero menos que SES (5)
 3. **Sin free tier permanente**: Trial de 60 dias solamente
 4. **Inbound Parse sin retry**: Riesgo de perdida de emails si el webhook falla. **Mitigacion**: el forwarding "Also deliver to" mantiene copia en el buzon del tenant
@@ -396,7 +400,7 @@ flowchart TD
 | **Webhooks** | Si, con firma ECDSA y retry (Event Webhook). Inbound Parse **sin retry**. |
 | **Multi-tenant** | Si (un Inbound Parse hostname, multiples tenants, sin cambios por tenant para inbound) |
 | **Precio POC** | $0 (trial 60 dias) o bajo contrato existente |
-| **Precio produccion** | $19.95-89.95/mes |
+| **Precio produccion** | $19.95-499/mes (segun plan y volumen) |
 | **Integracion NestJS** | Excelente (SDK oficial, tipado TS) |
 | **Setup DNS (nuestro)** | 1 registro MX para `sg.omnibrein.com` (una sola vez) |
 | **Setup DNS (por tenant)** | 4 cambios (3 CNAME + SPF) para outbound |

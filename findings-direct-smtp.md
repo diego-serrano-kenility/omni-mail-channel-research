@@ -322,7 +322,7 @@ El SMTP directo **no tiene costo por email**. Se usa la infraestructura que el c
 | Criterio | SMTP Directo (hibrido) | SendGrid | Amazon SES | Brevo |
 |---|---|---|---|---|
 | **Cambios DNS del cliente** | **0** | 3-4 | 5 | 1 |
-| **Costo por email enviado** | $0 | $0.40-0.90/1K | $0.10/1K | $0.63-0.75/1K |
+| **Costo por email enviado** | $0 | $0.35-0.90/1K | $0.10/1K | $0.63-0.75/1K |
 | **Tracking nativo outbound** | No (DIY) | Si | Si | Si |
 | **Inbound parsing** | Forwarding + provider webhook | Webhook nativo | S3+SNS (DIY) | Webhook nativo |
 | **Multi-tenant** | Config SMTP por cliente | Simple (1 API key) | Simple (1 cuenta AWS) | Simple (1 API key) |

@@ -19,7 +19,7 @@ Tras evaluar 5 proveedores/enfoques (Amazon SES, SendGrid, Gmail API, Brevo, SMT
 **Justificacion**:
 
 1. **Experiencia y contratos existentes** - El equipo ya trabaja con AWS (ECS, S3, SNS, SQS) y tiene contratos vigentes. No se requiere proceso de adquisicion de nuevo proveedor
-2. **Costo mas bajo a escala** - 62,000 emails/mes gratis desde ECS, luego $0.10/1K. A partir de volumen moderado es significativamente mas economico que las alternativas ($0.10/1K vs $0.40/1K de SendGrid o $0.63/1K de Brevo)
+2. **Costo mas bajo a escala** - 62,000 emails/mes gratis desde ECS, luego $0.10/1K. A partir de volumen moderado es significativamente mas economico que las alternativas ($0.10/1K vs $0.35-0.90/1K de SendGrid segun plan, o $0.63/1K de Brevo)
 3. **Integracion AWS nativa** - IAM-based auth (sin API keys), SNS/SQS ya en uso, Terraform/IaC nativo, CloudWatch para metricas
 4. **Tracking completo** via Configuration Sets + SNS/SQS/EventBridge
 5. **Escalabilidad** - Sin hard caps practicos, escala a millones
@@ -50,7 +50,7 @@ Tras evaluar 5 proveedores/enfoques (Amazon SES, SendGrid, Gmail API, Brevo, SMT
 - 3 CNAME para Domain Authentication (DKIM + SPF pass-through)
 - 1 modificacion al registro SPF existente (agregar `include:sendgrid.net`)
 
-**Costo**: Desde $19.95/mes (Essentials). Sin free tier permanente desde mayo 2025, pero el contrato existente puede ofrecer condiciones mas favorables.
+**Costo**: Desde $19.95/mes (Essentials 50K) hasta $499/mes (Pro 700K). Sin free tier permanente desde mayo 2025, pero el contrato existente puede ofrecer condiciones mas favorables.
 
 ### Opcion C (Fallback sin DNS): Gmail API
 

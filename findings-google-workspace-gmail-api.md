@@ -519,7 +519,7 @@ Los únicos costos de GCP serían:
 | Proyecto GCP | $0 |
 | **Costo total adicional** | **~$0/mes** |
 
-Esta es una ventaja de costo masiva sobre SendGrid ($19.95+/mes para Essentials) o SES ($0.10/1000 emails).
+Esta es una ventaja de costo masiva sobre SendGrid ($19.95-499/mes segun plan) o SES ($0.10/1000 emails).
 
 ---
 

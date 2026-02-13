@@ -770,7 +770,7 @@ flowchart TD
 | **Gestión de threads** | Manual (control total de headers) | Manual (control total de headers) | Mismo esfuerzo |
 | **Open/Click tracking** | Nativo (config set) | Nativo (incorporado) | Comparable |
 | **Event webhooks** | SNS->SQS/HTTP | Native Event Webhook | SES requiere más plumbing |
-| **Pricing (envío)** | $0.10/1K ($0 en free tier EC2) | $0.35-0.80/1K (por niveles) | SES 3-8x más barato |
+| **Pricing (envío)** | $0.10/1K ($0 en free tier EC2) | $0.35-0.90/1K (según plan) | SES 3-9x más barato |
 | **Pricing (inbound)** | $0.10/1K | Incluido en plan | SES más barato a volumen |
 | **Integración AWS** | Nativa | Third-party | Gran ventaja para SES |
 | **Facilidad de setup** | Media (más DIY) | Fácil (más batteries-included) | SendGrid más rápido para prototipar |

@@ -109,7 +109,7 @@
 
 | Criterio                            | Amazon SES                      | SendGrid                   | Gmail API         | SMTP Directo                      | Brevo                |
 | ----------------------------------- | ------------------------------- | -------------------------- | ----------------- | --------------------------------- | -------------------- |
-| **IP dedicada**                     | $24.95/IP/mes                   | Desde plan Pro ($89.95/mo) | N/A (Google IPs)  | N/A (IPs del cliente)             | Desde plan Business  |
+| **IP dedicada**                     | $24.95/IP/mes                   | Incluida en planes Pro (desde $89.95/mo) | N/A (Google IPs)  | N/A (IPs del cliente)             | Desde plan Business  |
 | **IP compartida**                   | Si (default)                    | Si (planes bajos)          | N/A (Google IPs)  | N/A                               | Si (planes bajos)    |
 | **Reputacion de IPs**               | Alta                            | Alta                       | Muy alta (Google) | Depende del proveedor del cliente | Media-Alta           |
 | **Warmup necesario**                | Si (IP nueva)                   | Si (IP nueva)              | No                | No                                | Si (IP nueva)        |
@@ -141,16 +141,16 @@
 ### SendGrid
 
 - **Fortaleza**: Tracking mas completo y maduro, Inbound Parse nativo (setup rapido), SDK robusto, **contrato existente y experiencia del equipo**
-- **Debilidad**: Costo mayor que SES ($0.40/1K), requiere 4 DNS changes, Inbound Parse no tiene retry, **sin free tier permanente** (solo trial 60 dias, minimo $19.95/mes)
+- **Debilidad**: Costo mayor que SES ($0.35-0.90/1K segun plan vs $0.10/1K), requiere 4 DNS changes, Inbound Parse no tiene retry, **sin free tier permanente** (solo trial 60 dias, minimo $19.95/mes)
 
 ### Gmail API
 
-- **Fortaleza**: 0 DNS changes, 0 costo adicional, threading nativo, entregabilidad de Google
+- **Fortaleza**: Sin cambios en DNS, 0 costo adicional, threading nativo, entregabilidad de Google
 - **Debilidad**: Sin tracking nativo, limite 2,000/dia via API (hasta 10,000/dia via SMTP Relay, limite fijo de Google), requiere Workspace admin
 
 ### SMTP Directo
 
-- **Fortaleza**: Zero DNS changes, zero costo por email, DMARC nativo, email genuino del cliente
+- **Fortaleza**: Sin cambios en DNS, sin costo por email, DMARC nativo, email genuino del cliente
 - **Debilidad**: Sin tracking nativo en outbound (DIY), limites del SMTP del cliente, gestion de credenciales multi-tenant
 
 ### Brevo
