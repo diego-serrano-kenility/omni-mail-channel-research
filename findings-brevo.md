@@ -1,9 +1,13 @@
-# Evaluacion Tecnica: Brevo (formerly Sendinblue)
+# Evaluacion Tecnica: Brevo
 
-> **Proveedor**: Brevo (rebrandeado desde Sendinblue en mayo 2023)
+> **Proveedor**: Brevo (renombrado desde Sendinblue en mayo 2023)
+>
 > **Sitio**: https://www.brevo.com
+>
 > **API Docs**: https://developers.brevo.com
+>
 > **Fecha de investigacion**: 2026-02-11
+>
 > **Estado del dominio**: Parcialmente integrado (DKIM + verificacion ya configurados)
 
 ---
@@ -119,7 +123,7 @@ v=spf1 include:_spf.google.com include:sendinblue.com ~all
 
 **Notas**:
 
-- Brevo usa `sendinblue.com` para SPF (no `brevo.com`) - esto es legacy del rebrandeo y sigue vigente
+- Brevo usa `sendinblue.com` para SPF (no `brevo.com`) - esto es legacy del rebranding y sigue vigente
 - Solo se agrega un `include` adicional, no afecta el email existente de Google Workspace
 - El cambio se hace en Cloudflare, en el registro TXT del dominio raiz
 - Propagacion DNS: tipicamente 5-15 minutos en Cloudflare (TTL bajo)
@@ -349,7 +353,7 @@ Asumiendo un volumen estimado de comunicaciones con clientes de Caminos de las S
 
 **Brevo tiene un SDK oficial para Node.js**: `@getbrevo/brevo`
 
-**Anteriormente**: El paquete se llamaba `sib-api-v3-sdk` (Sendinblue). El nuevo paquete `@getbrevo/brevo` es el oficial post-rebrandeo.
+**Anteriormente**: El paquete se llamaba `sib-api-v3-sdk` (Sendinblue). El nuevo paquete `@getbrevo/brevo` es el oficial luego del rebranding.
 
 **Nota sobre el SDK**: El SDK de Node.js de Brevo ha tenido historial de actualizaciones irregulares. Como alternativa robusta, se puede usar la **API REST directamente** con `axios` o `node-fetch`, lo cual es frecuentemente preferido en produccion.
 
@@ -415,17 +419,6 @@ Estado actual:                    Lo que falta:
                                    [ ] Implementar backend
 ```
 
-### Comparacion de esfuerzo vs otros proveedores
-
-| Tarea                   | Brevo     | SendGrid        | Amazon SES                 | Mailgun       |
-| ----------------------- | --------- | --------------- | -------------------------- | ------------- |
-| Verificar dominio       | Ya hecho  | Pendiente       | Pendiente                  | Pendiente     |
-| Configurar DKIM         | Ya hecho  | 2 CNAME records | 3 CNAME records            | 2 TXT records |
-| Configurar SPF          | 1 include | 1 include       | 1 include                  | 1 include     |
-| Verificar sender        | 1 paso    | 1 paso          | Verificacion email/dominio | 1 paso        |
-| Total DNS changes       | **1**     | **3-4**         | **4-5**                    | **3-4**       |
-| Riesgo de configuracion | **Bajo**  | Medio           | Medio-Alto                 | Medio         |
-
 ### Ventajas especificas
 
 1. **Menor riesgo de DMARC failure**: El DKIM ya esta alineado, por lo que incluso si se comete un error con SPF, los emails se entregaran.
@@ -465,63 +458,6 @@ Estado actual:                    Lo que falta:
 | Rate limit en free tier       | Media        | Medio   | Migrar a plan pago si se excede                           |
 | SDK con bugs                  | Media        | Bajo    | Usar API REST directamente                                |
 | Cambio de pricing             | Baja         | Medio   | Contratar plan anual si se encuentra buen precio          |
-
----
-
-## Diagrama del Flujo Propuesto con Brevo
-
-### Inbound Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Cliente
-    participant GW as Google Workspace<br/>MX actual
-    participant GA as Google Admin<br/>Forwarding
-    participant B as Brevo Inbound<br/>Parsing
-    participant N as Backend NestJS<br/>Webhook
-
-    C->>GW: Email a info@caminosdelassierras.com.ar
-    GW->>GA: Forward rule
-    GA->>B: Forward to inbound@brevo
-    B->>N: POST webhook (JSON parsed)
-    N->>N: Procesar
-    N->>N: Guardar en DB
-    N->>N: Asociar a caso
-```
-
-### Outbound Flow
-
-```mermaid
-sequenceDiagram
-    participant N as Backend NestJS
-    participant B as Brevo API<br/>Transaccional
-    participant S as Servidor destino
-    participant C as Cliente
-
-    N->>B: POST /smtp/email (con headers threading)
-    B->>S: SMTP + DKIM sign
-    S->>C: Entrega email
-    B-->>N: webhook delivered
-    B-->>N: webhook opened
-    B-->>N: webhook clicked
-```
-
-### Reply Flow (cliente responde)
-
-```mermaid
-sequenceDiagram
-    participant C as Cliente
-    participant GW as Google Workspace
-    participant B as Brevo Inbound
-    participant N as Backend NestJS
-
-    C->>GW: Reply en thread (In-Reply-To set)
-    GW->>B: Forward rule
-    B->>N: POST webhook (con In-Reply-To)
-    N->>N: Match thread
-    N->>N: Actualizar caso
-    N->>N: Responder si necesario
-```
 
 ---
 
@@ -581,7 +517,7 @@ sequenceDiagram
 - Send a transactional email (API reference): <https://developers.brevo.com/reference/send-transac-email>
 - SMTP relay integration: <https://developers.brevo.com/docs/smtp-integration>
 
-### Limites de tamanio de mensaje y attachments
+### Limites de tamaño de mensaje y attachments
 
 - Add an attachment to an email campaign: <https://help.brevo.com/hc/en-us/articles/11098615382802-Add-an-attachment-to-an-email-campaign>
 - Platform quotas (limites de objetos y recursos): <https://developers.brevo.com/docs/platform-quotas>
