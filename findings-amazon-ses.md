@@ -523,11 +523,9 @@ El modelo de pricing inbound de SES cobra por **chunks de 256 KB**, lo que signi
 
 1. **Lambda como primera acción en Receipt Rules (sin S3)**: Permite descartar el email sin almacenarlo en S3, ahorrando el coste de almacenamiento. Sin embargo, **el coste de los chunks de recepción ya se incurrió** — SES aceptó el mensaje completo antes de invocar la Lambda.
 
-2. **Proxy MX propio por delante de SES (única solución real)**: Colocar un servidor de correo (ej: Postfix o Haraka en una instancia EC2 t4g.nano) como MX primario. Este servidor puede rechazar durante el handshake SMTP con un `552 Message size exceeds limit` **antes de recibir el DATA y los adjuntos**, de modo que SES nunca ve el mensaje. El coste de la instancia EC2 es fijo y predecible, y puede amortizarse frente al ahorro en chunks si se reciben volúmenes considerables de adjuntos pesados.
+2. **Proxy MX propio por delante de SES (única solución real)**: Colocar un servidor de correo (ej: Postfix en una instancia EC2 económica) como MX primario. Este servidor puede rechazar durante el handshake SMTP con un `552 Message size exceeds limit` **antes de recibir el DATA y los adjuntos**, de modo que SES nunca ve el mensaje. El coste de la instancia EC2 es fijo y predecible, y puede amortizarse frente al ahorro en chunks si se reciben volúmenes considerables de adjuntos pesados.
 
-3. **Considerar alternativas para recepción**: Servicios como Cloudflare Email Routing (gratuito, con limitaciones) o ImprovMX podrían ser más económicos para recibir y reenviar, usando SES exclusivamente para envío donde el pricing es más predecible.
-
-**Nota sobre S3**: El almacenamiento en S3 de los emails raw **no es un problema de coste significativo**, ya que los objetos se pueden eliminar tras el procesamiento o mover a un bucket con pricing dinámico (S3 Intelligent-Tiering).
+**Respecto S3**: El almacenamiento en S3 de los emails raw **no es un problema de coste significativo**, ya que los objetos se pueden eliminar tras el procesamiento o mover a un bucket con pricing dinámico (S3 Intelligent-Tiering).
 
 **Conclusión**: Para volúmenes bajos o emails con adjuntos pequeños, el pricing inbound de SES es despreciable. Si se espera recibir volumen considerable de emails con adjuntos pesados (>5 MB), se debe evaluar el proxy MX como medida de protección de costes.
 
