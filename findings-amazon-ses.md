@@ -33,6 +33,10 @@ El flujo es el siguiente:
 4. El backend NestJS (via SQS) procesa el email, lo parsea y lo almacena en la base de datos.
 
 ```mermaid
+---
+config:
+  markdownAutoWrap: false
+---
 flowchart TD
     TenantMail["Tenant: info@caminosdelassierras.com.ar
     Google Workspace"] -->|"Regla de forwarding/copia"| SESAddr["caminos@mail.dev.omnibrein.com"]
@@ -108,7 +112,7 @@ Cuando Google reenvía un email, el SPF del remitente original puede fallar (por
 La arquitectura escala naturalmente a múltiples tenants sin cambios en infraestructura:
 
 | Tenant                 | Email del tenant                  | Dirección en mail.dev.omnibrein.com | Forwarding                    |
-| ---------------------- | --------------------------------- | ------------------------------ | ----------------------------- |
+| ---------------------- | --------------------------------- | ----------------------------------- | ----------------------------- |
 | Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@mail.dev.omnibrein.com`    | Google Workspace routing rule |
 | Tenant B               | `contacto@tenantb.com`            | `tenantb@mail.dev.omnibrein.com`    | Según su proveedor de email   |
 | Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@mail.dev.omnibrein.com`    | Según su proveedor de email   |
@@ -199,10 +203,10 @@ Ejemplo para el tenant Caminos de las Sierras (`caminosdelassierras.com.ar`, DNS
 
 #### Resumen: qué necesita cada parte
 
-| Requisito                               | omnibrein.com (nosotros)                                     | Dominio del tenant                                      |
-| --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| Requisito                               | omnibrein.com (nosotros)                                          | Dominio del tenant                                      |
+| --------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
 | **Para inbound (recibir)**              | MX + verificación DKIM de `mail.dev.omnibrein.com` (una sola vez) | Solo regla de forwarding (sin cambios DNS)              |
-| **Para outbound (enviar como @tenant)** | N/A                                                          | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM (5-6 registros) |
+| **Para outbound (enviar como @tenant)** | N/A                                                               | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM (5-6 registros) |
 
 ---
 
@@ -229,6 +233,10 @@ El proceso de verificación por cada nuevo tenant:
 Una vez que el dominio del tenant está verificado en SES, el sistema envía respuestas vía SMTP a través de SES **on-behalf-of** la cuenta del tenant — la misma identidad que recibió el email original. El email incluye los headers de threading (`In-Reply-To`, `References`) y `Reply-To` para mantener la continuidad del hilo de conversación.
 
 ```mermaid
+---
+config:
+  markdownAutoWrap: false
+---
 flowchart TD
     Agent["Agente responde
     desde la UI del sistema"] --> NestJS["NestJS on ECS
@@ -442,10 +450,10 @@ El pricing de SES es directo y está entre los más baratos del mercado.
 
 #### Email Outbound (Envío)
 
-| Escenario                             | Precio                                                        |
-| ------------------------------------- | ------------------------------------------------------------- |
-| Envío (cualquier origen)              | **$0.10 por 1,000 emails** ($0.0001 por email)                |
-| Adjuntos                              | **$0.12 por GB** de adjuntos enviados                         |
+| Escenario                | Precio                                         |
+| ------------------------ | ---------------------------------------------- |
+| Envío (cualquier origen) | **$0.10 por 1,000 emails** ($0.0001 por email) |
+| Adjuntos                 | **$0.12 por GB** de adjuntos enviados          |
 
 > **Cambio en el Free Tier (agosto 2023)**: AWS eliminó el free tier permanente de 62,000 emails/mes desde EC2/ECS. El free tier actual ofrece **3,000 message charges/mes durante los primeros 12 meses** de uso de SES. Después de ese periodo, se paga $0.10/1K desde el primer email. Adicionalmente, desde julio 2025, los nuevos clientes AWS reciben hasta **$200 en créditos** aplicables a SES y otros servicios (válidos por 12 meses). Dado que la empresa ya usa SES/AWS, es probable que el free tier de 12 meses ya haya expirado, por lo que se debe calcular al precio estándar de $0.10/1K.
 >
@@ -479,23 +487,23 @@ Asumiendo:
 - Adjuntos pequeños (< 1 GB total)
 - Sin free tier (cuenta AWS existente, free tier de 12 meses ya expirado)
 
-| Ítem                                            | Coste mensual                            |
-| ----------------------------------------------- | ---------------------------------------- |
-| Outbound (500 emails a $0.10/1K)                | $0.05                                    |
-| Inbound (500 emails a $0.10/1K)                 | $0.05                                    |
-| Notificaciones SNS                              | ~$0.00 (SNS primeros 1M requests gratis) |
-| Almacenamiento S3 para emails raw               | ~$0.01                                   |
-| **Total**                                       | **~$0.11/mes**                           |
+| Ítem                              | Coste mensual                            |
+| --------------------------------- | ---------------------------------------- |
+| Outbound (500 emails a $0.10/1K)  | $0.05                                    |
+| Inbound (500 emails a $0.10/1K)   | $0.05                                    |
+| Notificaciones SNS                | ~$0.00 (SNS primeros 1M requests gratis) |
+| Almacenamiento S3 para emails raw | ~$0.01                                   |
+| **Total**                         | **~$0.11/mes**                           |
 
 Estimación a mayor escala (10 tenants, 10,000 emails/mes total):
 
-| Ítem                                           | Coste mensual  |
-| ---------------------------------------------- | -------------- |
-| Outbound (10,000 emails a $0.10/1K)            | $1.00          |
-| Inbound (10,000 emails a $0.10/1K)             | $1.00          |
-| Chunks inbound (~10,000 x 32KB avg)            | ~$0.11         |
-| Adjuntos (~2 GB)                               | $0.24          |
-| **Total**                                      | **~$2.35/mes** |
+| Ítem                                | Coste mensual  |
+| ----------------------------------- | -------------- |
+| Outbound (10,000 emails a $0.10/1K) | $1.00          |
+| Inbound (10,000 emails a $0.10/1K)  | $1.00          |
+| Chunks inbound (~10,000 x 32KB avg) | ~$0.11         |
+| Adjuntos (~2 GB)                    | $0.24          |
+| **Total**                           | **~$2.35/mes** |
 
 ---
 
@@ -638,14 +646,14 @@ flowchart TD
 
 ### Qué hacemos nosotros
 
-| Paso                                        | Acción                                        | Frecuencia            |
-| ------------------------------------------- | --------------------------------------------- | --------------------- |
-| Crear dirección `tenantX@mail.dev.omnibrein.com` | Registrar en BD del backend                   | Por cada nuevo tenant |
-| Iniciar verificación de dominio en SES      | SES Console o API                             | Por cada nuevo tenant |
-| Proporcionar registros DNS al tenant        | Extraer de SES y comunicar al tenant          | Por cada nuevo tenant |
-| Configurar DNS de `mail.dev.omnibrein.com`       | Ya está hecho (MX + DKIM)                     | **Una sola vez**      |
-| Configurar Receipt Rules                    | Ya está hecho (para todo `mail.dev.omnibrein.com`) | **Una sola vez**      |
-| Configurar pipeline S3/SNS/SQS              | Ya está hecho                                 | **Una sola vez**      |
+| Paso                                             | Acción                                             | Frecuencia            |
+| ------------------------------------------------ | -------------------------------------------------- | --------------------- |
+| Crear dirección `tenantX@mail.dev.omnibrein.com` | Registrar en BD del backend                        | Por cada nuevo tenant |
+| Iniciar verificación de dominio en SES           | SES Console o API                                  | Por cada nuevo tenant |
+| Proporcionar registros DNS al tenant             | Extraer de SES y comunicar al tenant               | Por cada nuevo tenant |
+| Configurar DNS de `mail.dev.omnibrein.com`       | Ya está hecho (MX + DKIM)                          | **Una sola vez**      |
+| Configurar Receipt Rules                         | Ya está hecho (para todo `mail.dev.omnibrein.com`) | **Una sola vez**      |
+| Configurar pipeline S3/SNS/SQS                   | Ya está hecho                                      | **Una sola vez**      |
 
 **Ventaja clave**: La infraestructura base (DNS de `mail.dev.omnibrein.com`, Receipt Rules, pipeline S3/SNS/SQS) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
 
@@ -740,20 +748,20 @@ flowchart TD
 
 ## Notas de comparación (vs. otros proveedores en evaluación)
 
-| Característica                     | Amazon SES                               | SendGrid                                            | Notas                               |
-| ---------------------------------- | ---------------------------------------- | --------------------------------------------------- | ----------------------------------- |
+| Característica                     | Amazon SES                                    | SendGrid                                            | Notas                               |
+| ---------------------------------- | --------------------------------------------- | --------------------------------------------------- | ----------------------------------- |
 | **Inbound parsing**                | DIY (S3+SNS+SQS) via `mail.dev.omnibrein.com` | Built-in Inbound Parse webhook                      | SendGrid más simple para inbound    |
-| **Outbound sending**               | API/SMTP                                 | API/SMTP                                            | Comparable                          |
-| **Setup DKIM**                     | 3 registros CNAME por tenant             | 2 registros CNAME por tenant                        | SES ligeramente más registros DNS   |
-| **Gestión de threads**             | Manual (control total de headers)        | Manual (control total de headers)                   | Mismo esfuerzo                      |
-| **Open/Click tracking**            | Nativo (config set)                      | Nativo (incorporado)                                | Comparable                          |
-| **Event webhooks**                 | SNS->SQS/HTTP                            | Native Event Webhook                                | SES requiere más plumbing           |
-| **Pricing (envío)**                | $0.10/1K (sin free tier permanente)      | $0.35-0.90/1K (según plan)                          | SES 3-9x más barato                 |
-| **Pricing (inbound)**              | $0.10/1K                                 | Incluido en plan                                    | SES más barato a volumen            |
-| **Integración AWS**                | Nativa                                   | Third-party                                         | Gran ventaja para SES               |
-| **Facilidad de setup**             | Media (más DIY)                          | Fácil (más batteries-included)                      | SendGrid más rápido para prototipar |
-| **Multi-tenant**                   | Natural (dominio propio + receipt rules) | Requiere subuser o domain authentication por tenant | SES más flexible para multi-tenant  |
-| **Herramientas de deliverability** | Virtual Deliverability Manager ($)       | Deliverability insights (depende del plan)          | Ambos adecuados                     |
+| **Outbound sending**               | API/SMTP                                      | API/SMTP                                            | Comparable                          |
+| **Setup DKIM**                     | 3 registros CNAME por tenant                  | 2 registros CNAME por tenant                        | SES ligeramente más registros DNS   |
+| **Gestión de threads**             | Manual (control total de headers)             | Manual (control total de headers)                   | Mismo esfuerzo                      |
+| **Open/Click tracking**            | Nativo (config set)                           | Nativo (incorporado)                                | Comparable                          |
+| **Event webhooks**                 | SNS->SQS/HTTP                                 | Native Event Webhook                                | SES requiere más plumbing           |
+| **Pricing (envío)**                | $0.10/1K (sin free tier permanente)           | $0.35-0.90/1K (según plan)                          | SES 3-9x más barato                 |
+| **Pricing (inbound)**              | $0.10/1K                                      | Incluido en plan                                    | SES más barato a volumen            |
+| **Integración AWS**                | Nativa                                        | Third-party                                         | Gran ventaja para SES               |
+| **Facilidad de setup**             | Media (más DIY)                               | Fácil (más batteries-included)                      | SendGrid más rápido para prototipar |
+| **Multi-tenant**                   | Natural (dominio propio + receipt rules)      | Requiere subuser o domain authentication por tenant | SES más flexible para multi-tenant  |
+| **Herramientas de deliverability** | Virtual Deliverability Manager ($)            | Deliverability insights (depende del plan)          | Ambos adecuados                     |
 
 ---
 
@@ -761,7 +769,7 @@ flowchart TD
 
 | Criterio                                   | Valoración                        | Notas                                                                                    |
 | ------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------- |
-| **¿Puede recibir email inbound?**          | Sí (via `mail.dev.omnibrein.com`)      | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
+| **¿Puede recibir email inbound?**          | Sí (via `mail.dev.omnibrein.com`) | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
 | **¿Puede enviar como @tenant?**            | Sí (con registros DNS del tenant) | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM = 5 registros DNS en el DNS del tenant           |
 | **¿Pasa DMARC p=reject?**                  | Sí                                | La alineación DKIM vía Easy DKIM satisface DMARC                                         |
 | **¿Continuidad de thread?**                | Sí (manual)                       | Control total vía headers In-Reply-To/References                                         |
