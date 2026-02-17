@@ -12,8 +12,8 @@
 >
 > **Contexto**: Evaluar SendGrid para una arquitectura **multi-tenant** de email donde:
 >
-> - Se usa el subdominio `sg.omnibrein.com` (dominio propio) con MX apuntando a SendGrid para recepcion inbound via Inbound Parse
-> - Cada tenant (ej: `info@caminosdelassierras.com.ar`) configura forwarding hacia una direccion dedicada en `sg.omnibrein.com` (ej: `caminos@sg.omnibrein.com`)
+> - Se usa el subdominio `mail.dev.omnibrein.com` (dominio propio) con MX apuntando a SendGrid para recepcion inbound via Inbound Parse
+> - Cada tenant (ej: `info@caminosdelassierras.com.ar`) configura forwarding hacia una direccion dedicada en `mail.dev.omnibrein.com` (ej: `caminos@mail.dev.omnibrein.com`)
 > - SendGrid parsea los emails inbound y los envia via webhook POST al backend NestJS/Node.js
 > - SendGrid envia respuestas con Domain Authentication del dominio del tenant (ej: `@caminosdelassierras.com.ar`)
 >
@@ -36,21 +36,21 @@
 
 ### A1. Recepcion de Email Inbound via Inbound Parse
 
-#### Arquitectura de recepcion: sg.omnibrein.com
+#### Arquitectura de recepcion: mail.dev.omnibrein.com
 
-La arquitectura de recepcion se basa en usar un **subdominio propio** (`sg.omnibrein.com`) como punto de entrada para todos los emails inbound de todos los tenants. SendGrid actua como servidor de correo inbound para este subdominio mediante **Inbound Parse**.
+La arquitectura de recepcion se basa en usar un **subdominio propio** (`mail.dev.omnibrein.com`) como punto de entrada para todos los emails inbound de todos los tenants. SendGrid actua como servidor de correo inbound para este subdominio mediante **Inbound Parse**.
 
 El flujo es el siguiente:
 
-1. El tenant configura una **regla de forwarding/copia** en su proveedor de email (ej: Google Workspace) para reenviar los emails entrantes a una direccion dedicada en `sg.omnibrein.com`.
-2. El registro MX de `sg.omnibrein.com` apunta a `mx.sendgrid.net`, que recibe el email reenviado.
+1. El tenant configura una **regla de forwarding/copia** en su proveedor de email (ej: Google Workspace) para reenviar los emails entrantes a una direccion dedicada en `mail.dev.omnibrein.com`.
+2. El registro MX de `mail.dev.omnibrein.com` apunta a `mx.sendgrid.net`, que recibe el email reenviado.
 3. SendGrid parsea el email y hace **HTTP POST** al webhook configurado con los datos estructurados.
 4. El backend NestJS recibe el payload parseado, identifica el tenant y lo almacena en la base de datos.
 
 ```mermaid
 flowchart TD
     TenantMail["Tenant: info@caminosdelassierras.com.ar
-    Google Workspace"] -->|"Regla de forwarding/copia"| SGAddr["caminos@sg.omnibrein.com"]
+    Google Workspace"] -->|"Regla de forwarding/copia"| SGAddr["caminos@mail.dev.omnibrein.com"]
     SGAddr -->|"MX -> mx.sendgrid.net"| IP["SendGrid Inbound Parse
     parsea email automaticamente"]
     IP -->|"HTTP POST multipart/form-data"| NestJS["NestJS Backend
@@ -60,19 +60,19 @@ flowchart TD
 
 **Ventaja clave vs SES**: SendGrid **parsea el email automaticamente** y envia los datos estructurados (from, to, subject, body, attachments) directamente al webhook. No es necesario construir un pipeline S3/SNS/SQS ni parsear MIME raw.
 
-#### Configuracion del subdominio sg.omnibrein.com
+#### Configuracion del subdominio mail.dev.omnibrein.com
 
 **Paso 1: Registro MX en DNS de omnibrein.com**
 
 ```
-sg.omnibrein.com    MX    10 mx.sendgrid.net
+mail.dev.omnibrein.com    MX    10 mx.sendgrid.net
 ```
 
 **Paso 2: Configurar Inbound Parse en SendGrid**
 
 En SendGrid Dashboard → Settings → Inbound Parse:
 
-- **Hostname**: `sg.omnibrein.com`
+- **Hostname**: `mail.dev.omnibrein.com`
 - **URL**: `https://api.omnibrein.com/webhooks/sendgrid/inbound` (endpoint NestJS del backend)
 - **Check incoming emails for spam**: Opcional
 - **Send raw**: Opcional (si quieres el MIME raw ademas del parsed)
@@ -104,11 +104,11 @@ SendGrid envia un POST `multipart/form-data` con los siguientes campos:
 
 **Modo Raw**: Tambien disponible, envia el email completo en formato MIME en el campo `email`.
 
-**Identificacion del tenant**: El backend identifica a que tenant pertenece el email inbound analizando el campo `to` (ej: `caminos@sg.omnibrein.com` → tenant "Caminos de las Sierras"). Este mapeo se gestiona en la base de datos.
+**Identificacion del tenant**: El backend identifica a que tenant pertenece el email inbound analizando el campo `to` (ej: `caminos@mail.dev.omnibrein.com` → tenant "Caminos de las Sierras"). Este mapeo se gestiona en la base de datos.
 
 #### Configuracion del forwarding en el tenant
 
-El tenant debe configurar una regla para copiar/reenviar todos los emails entrantes a su direccion dedicada en `sg.omnibrein.com`:
+El tenant debe configurar una regla para copiar/reenviar todos los emails entrantes a su direccion dedicada en `mail.dev.omnibrein.com`:
 
 | Proveedor del tenant | Metodo de forwarding                                                     |
 | -------------------- | ------------------------------------------------------------------------ |
@@ -120,7 +120,7 @@ Para el tenant de referencia (Caminos de las Sierras, Google Workspace):
 
 - Configurar en Google Admin Console → Gmail → Routing → **"Add rule"**
 - Condicion: emails recibidos en `info@caminosdelassierras.com.ar`
-- Accion: **"Also deliver to"** → `caminos@sg.omnibrein.com`
+- Accion: **"Also deliver to"** → `caminos@mail.dev.omnibrein.com`
 
 #### Impacto del forwarding en DMARC/SPF
 
@@ -130,17 +130,17 @@ Cuando Google reenvia un email, el SPF del remitente original puede fallar (porq
 
 La arquitectura escala naturalmente a multiples tenants:
 
-| Tenant                 | Email del tenant                  | Direccion en sg.omnibrein.com | Forwarding                    |
+| Tenant                 | Email del tenant                  | Direccion en mail.dev.omnibrein.com | Forwarding                    |
 | ---------------------- | --------------------------------- | ----------------------------- | ----------------------------- |
-| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@sg.omnibrein.com`    | Google Workspace routing rule |
-| Tenant B               | `contacto@tenantb.com`            | `tenantb@sg.omnibrein.com`    | Segun su proveedor de email   |
-| Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@sg.omnibrein.com`    | Segun su proveedor de email   |
+| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@mail.dev.omnibrein.com`    | Google Workspace routing rule |
+| Tenant B               | `contacto@tenantb.com`            | `tenantb@mail.dev.omnibrein.com`    | Segun su proveedor de email   |
+| Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@mail.dev.omnibrein.com`    | Segun su proveedor de email   |
 
 **Para agregar un nuevo tenant** al sistema inbound:
 
-1. Asignar una direccion unica en `sg.omnibrein.com` (ej: `nuevotenantX@sg.omnibrein.com`)
+1. Asignar una direccion unica en `mail.dev.omnibrein.com` (ej: `nuevotenantX@mail.dev.omnibrein.com`)
 2. El tenant configura forwarding desde su email hacia esa direccion
-3. El Inbound Parse existente (para todo `sg.omnibrein.com`) ya cubre la nueva direccion automaticamente
+3. El Inbound Parse existente (para todo `mail.dev.omnibrein.com`) ya cubre la nueva direccion automaticamente
 4. **No se requieren cambios en DNS, ni en SendGrid, ni en el webhook**
 
 Para outbound (enviar respuestas como `@dominioDelTenant`), si se requiere Domain Authentication del dominio del tenant en SendGrid (ver seccion A3).
@@ -190,7 +190,7 @@ v=spf1 include:_spf.google.com include:sendgrid.net ~all
 
 | Requisito                               | omnibrein.com (nosotros)                                       | Dominio del tenant                          |
 | --------------------------------------- | -------------------------------------------------------------- | ------------------------------------------- |
-| **Para inbound (recibir)**              | MX de `sg.omnibrein.com` + config Inbound Parse (una sola vez) | Solo regla de forwarding (sin cambios DNS)  |
+| **Para inbound (recibir)**              | MX de `mail.dev.omnibrein.com` + config Inbound Parse (una sola vez) | Solo regla de forwarding (sin cambios DNS)  |
 | **Para outbound (enviar como @tenant)** | N/A                                                            | 3 CNAMEs + modificacion SPF (4 cambios DNS) |
 
 ---
@@ -207,9 +207,9 @@ Con Domain Authentication configurado para el dominio del tenant:
 
 **Reply-To**: Control total, independiente del From.
 
-**Caso de uso multi-tenant**: Establecer `From` como `info@caminosdelassierras.com.ar` y `Reply-To` a la misma direccion. Cuando el usuario final responde, el email llega a Google Workspace del tenant, que lo reenvia a `caminos@sg.omnibrein.com`, cerrando el ciclo.
+**Caso de uso multi-tenant**: Establecer `From` como `info@caminosdelassierras.com.ar` y `Reply-To` a la misma direccion. Cuando el usuario final responde, el email llega a Google Workspace del tenant, que lo reenvia a `caminos@mail.dev.omnibrein.com`, cerrando el ciclo.
 
-Alternativamente, se puede usar `Reply-To` como direccion de tracking (ej: `case-12345@sg.omnibrein.com`) para enrutar respuestas directamente al sistema sin depender del forwarding del tenant para las respuestas.
+Alternativamente, se puede usar `Reply-To` como direccion de tracking (ej: `case-12345@mail.dev.omnibrein.com`) para enrutar respuestas directamente al sistema sin depender del forwarding del tenant para las respuestas.
 
 **Custom Headers**: Soportados (In-Reply-To, References, X-Custom, etc.)
 
@@ -340,7 +340,7 @@ El tracking esta **incluido en TODOS los planes** (incluyendo trial):
 flowchart TD
     Start["Nuevo tenant:
     soporte@nuevotenant.com"] --> Step1["1. Asignar direccion inbound
-    nuevotenant@sg.omnibrein.com"]
+    nuevotenant@mail.dev.omnibrein.com"]
     Step1 --> Step2["2. Registrar mapeo en DB
     nuevotenant@sg... -> tenant ID"]
     Step2 --> Step3["3. Domain Authentication en SendGrid
@@ -350,7 +350,7 @@ flowchart TD
     Step4 --> Step5["5. SendGrid verifica dominio
     minutos a horas"]
     Step5 --> Step6["6. Tenant configura forwarding
-    soporte@nuevotenant.com -> nuevotenant@sg.omnibrein.com"]
+    soporte@nuevotenant.com -> nuevotenant@mail.dev.omnibrein.com"]
     Step6 --> Done["Tenant operativo
     Inbound + Outbound funcionando"]
 ```
@@ -367,14 +367,14 @@ flowchart TD
 
 | Paso                                       | Accion                                    | Frecuencia            |
 | ------------------------------------------ | ----------------------------------------- | --------------------- |
-| Crear direccion `tenantX@sg.omnibrein.com` | Registrar en BD del backend               | Por cada nuevo tenant |
+| Crear direccion `tenantX@mail.dev.omnibrein.com` | Registrar en BD del backend               | Por cada nuevo tenant |
 | Iniciar Domain Authentication en SendGrid  | SendGrid Dashboard o API                  | Por cada nuevo tenant |
 | Proporcionar registros DNS al tenant       | Extraer de SendGrid y comunicar al tenant | Por cada nuevo tenant |
-| Configurar DNS de `sg.omnibrein.com`       | Ya esta hecho (MX)                        | **Una sola vez**      |
+| Configurar DNS de `mail.dev.omnibrein.com`       | Ya esta hecho (MX)                        | **Una sola vez**      |
 | Configurar Inbound Parse                   | Ya esta hecho (hostname + webhook URL)    | **Una sola vez**      |
 | Desarrollar webhook endpoint               | Ya esta hecho (NestJS)                    | **Una sola vez**      |
 
-**Ventaja clave**: La infraestructura base (DNS de `sg.omnibrein.com`, Inbound Parse, webhook endpoint) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
+**Ventaja clave**: La infraestructura base (DNS de `mail.dev.omnibrein.com`, Inbound Parse, webhook endpoint) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
 
 ---
 
@@ -385,7 +385,7 @@ flowchart TD
 3. **Inbound Parse nativo**: Webhook POST con email **ya parseado** (vs DIY S3/SNS/SQS de SES). Significativamente mas simple de implementar.
 4. **Tracking completo**: El mas maduro de los evaluados, con webhooks firmados (ECDSA)
 5. **SDK robusto**: `@sendgrid/mail` estable, bien mantenido, con tipado TypeScript
-6. **1 solo registro DNS para inbound**: MX de `sg.omnibrein.com` → `mx.sendgrid.net` (vs 4 registros de SES)
+6. **1 solo registro DNS para inbound**: MX de `mail.dev.omnibrein.com` → `mx.sendgrid.net` (vs 4 registros de SES)
 7. **Multi-tenant natural**: Un hostname de Inbound Parse, multiples tenants, sin cambios por tenant
 8. **Seguridad de webhooks**: Firma ECDSA para verificar autenticidad
 
@@ -405,7 +405,7 @@ flowchart TD
 
 | Criterio                       | Evaluacion                                                                             |
 | ------------------------------ | -------------------------------------------------------------------------------------- |
-| **Inbound email**              | Nativo via Inbound Parse (webhook POST con datos parseados) a `sg.omnibrein.com`       |
+| **Inbound email**              | Nativo via Inbound Parse (webhook POST con datos parseados) a `mail.dev.omnibrein.com`       |
 | **Outbound autenticado**       | Si, con Domain Authentication (4 DNS changes por tenant)                               |
 | **Threading**                  | Manual pero straightforward                                                            |
 | **Tracking**                   | El mas completo y maduro de todos los evaluados                                        |
@@ -414,7 +414,7 @@ flowchart TD
 | **Precio POC**                 | $0 (trial 60 dias) o bajo contrato existente                                           |
 | **Precio produccion**          | $19.95-499/mes (segun plan y volumen)                                                  |
 | **Integracion NestJS**         | Excelente (SDK oficial, tipado TS)                                                     |
-| **Setup DNS (nuestro)**        | 1 registro MX para `sg.omnibrein.com` (una sola vez)                                   |
+| **Setup DNS (nuestro)**        | 1 registro MX para `mail.dev.omnibrein.com` (una sola vez)                                   |
 | **Setup DNS (por tenant)**     | 4 cambios (3 CNAME + SPF) para outbound                                                |
 | **DMARC compliance**           | Si (DKIM alineado via Domain Auth)                                                     |
 | **Experiencia del equipo**     | **Si** (contrato y experiencia previa)                                                 |

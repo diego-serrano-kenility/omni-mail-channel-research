@@ -14,7 +14,7 @@ Realizar una POC técnica para validar proveedores de e-mail que permitan:
 ### **Flujo esperado:**
 
 1. Cliente envía e-mail a info@caminosdelasierras.com
-2. Se configura una regla de forwarding hacia una casilla técnica nuestra (ej: inbound-caminos@omnibrein.com)
+2. Se configura una regla de forwarding hacia una casilla técnica nuestra (ej: inbound-caminos@mail.dev.omnibrein.com)
 3. Nuestro backend:
    - Recibe el e-mail
    - Lo procesa

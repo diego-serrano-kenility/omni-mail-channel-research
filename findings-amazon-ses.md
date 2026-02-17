@@ -8,8 +8,8 @@
 >
 > **Contexto**: Evaluar SES para una arquitectura **multi-tenant** de email donde:
 >
-> - Se usa el subdominio `ses.omnibrein.com` (dominio propio) con MX apuntando a SES para recepción inbound
-> - Cada tenant (ej: `info@caminosdelassierras.com.ar`) configura forwarding hacia una dirección dedicada en `ses.omnibrein.com` (ej: `caminos@ses.omnibrein.com`)
+> - Se usa el subdominio `mail.dev.omnibrein.com` (dominio propio) con MX apuntando a SES para recepción inbound
+> - Cada tenant (ej: `info@caminosdelassierras.com.ar`) configura forwarding hacia una dirección dedicada en `mail.dev.omnibrein.com` (ej: `caminos@mail.dev.omnibrein.com`)
 > - SES procesa los emails inbound y los envía al backend NestJS/Node.js en AWS (ECS)
 > - SES envía respuestas firmadas con DKIM del dominio del tenant (ej: `@caminosdelassierras.com.ar`)
 >
@@ -21,23 +21,23 @@
 
 ### A1. Recepción de Email Inbound
 
-#### Arquitectura de recepción: ses.omnibrein.com
+#### Arquitectura de recepción: mail.dev.omnibrein.com
 
-La arquitectura de recepción se basa en usar un **subdominio propio** (`ses.omnibrein.com`) como punto de entrada para todos los emails inbound de todos los tenants. SES actúa como servidor de correo inbound para este subdominio mediante **SES Email Receiving**.
+La arquitectura de recepción se basa en usar un **subdominio propio** (`mail.dev.omnibrein.com`) como punto de entrada para todos los emails inbound de todos los tenants. SES actúa como servidor de correo inbound para este subdominio mediante **SES Email Receiving**.
 
 El flujo es el siguiente:
 
-1. El tenant configura una **regla de forwarding/copia** en su proveedor de email (ej: Google Workspace) para reenviar los emails entrantes a una dirección dedicada en `ses.omnibrein.com`.
-2. El registro MX de `ses.omnibrein.com` apunta a SES, que recibe el email reenviado.
+1. El tenant configura una **regla de forwarding/copia** en su proveedor de email (ej: Google Workspace) para reenviar los emails entrantes a una dirección dedicada en `mail.dev.omnibrein.com`.
+2. El registro MX de `mail.dev.omnibrein.com` apunta a SES, que recibe el email reenviado.
 3. Las **Receipt Rules** de SES procesan el email: lo almacenan en S3 y notifican via SNS.
 4. El backend NestJS (via SQS) procesa el email, lo parsea y lo almacena en la base de datos.
 
 ```mermaid
 flowchart TD
     TenantMail["Tenant: info@caminosdelassierras.com.ar
-    Google Workspace"] -->|"Regla de forwarding/copia"| SESAddr["caminos@ses.omnibrein.com"]
+    Google Workspace"] -->|"Regla de forwarding/copia"| SESAddr["caminos@mail.dev.omnibrein.com"]
     SESAddr -->|"MX -> SES Inbound us-east-1"| RR["SES Receipt Rule
-    para ses.omnibrein.com"]
+    para mail.dev.omnibrein.com"]
     RR --> S3["S3 Bucket
     raw email MIME"]
     RR --> SNS["SNS Topic"]
@@ -46,7 +46,7 @@ flowchart TD
     parse, procesar, almacenar"]
 ```
 
-#### Configuración del subdominio ses.omnibrein.com
+#### Configuración del subdominio mail.dev.omnibrein.com
 
 **Paso 1: Registro MX en DNS de omnibrein.com**
 
@@ -61,16 +61,16 @@ El registro MX del subdominio debe apuntar al endpoint SMTP inbound de SES para 
 Registro MX a agregar en el DNS de `omnibrein.com`:
 
 ```
-ses.omnibrein.com    MX    10 inbound-smtp.us-east-1.amazonaws.com
+mail.dev.omnibrein.com    MX    10 inbound-smtp.us-east-1.amazonaws.com
 ```
 
 **Paso 2: Verificar el subdominio en SES**
 
-Verificar `ses.omnibrein.com` como identidad en SES (vía DKIM o registro TXT). Esto permite que SES acepte correo para cualquier dirección `*@ses.omnibrein.com`.
+Verificar `mail.dev.omnibrein.com` como identidad en SES (vía DKIM o registro TXT). Esto permite que SES acepte correo para cualquier dirección `*@mail.dev.omnibrein.com`.
 
 **Paso 3: Crear Receipt Rule**
 
-Crear una Receipt Rule para el dominio `ses.omnibrein.com` que aplique a **todas las direcciones** del subdominio. Esto permite agregar nuevos tenants sin modificar las reglas de SES.
+Crear una Receipt Rule para el dominio `mail.dev.omnibrein.com` que aplique a **todas las direcciones** del subdominio. Esto permite agregar nuevos tenants sin modificar las reglas de SES.
 
 **LIMITACIÓN CRÍTICA**: El email inbound de SES solo está disponible en **tres regiones**:
 
@@ -80,7 +80,7 @@ Crear una Receipt Rule para el dominio `ses.omnibrein.com` que aplique a **todas
 
 #### Configuración del forwarding en el tenant
 
-El tenant (ej: Caminos de las Sierras) debe configurar una regla para copiar/reenviar todos los emails entrantes a su dirección dedicada en `ses.omnibrein.com`. Dependiendo del proveedor de email del tenant:
+El tenant (ej: Caminos de las Sierras) debe configurar una regla para copiar/reenviar todos los emails entrantes a su dirección dedicada en `mail.dev.omnibrein.com`. Dependiendo del proveedor de email del tenant:
 
 | Proveedor del tenant | Método de forwarding                                                     |
 | -------------------- | ------------------------------------------------------------------------ |
@@ -92,7 +92,7 @@ Para el tenant de referencia (Caminos de las Sierras, Google Workspace):
 
 - Configurar en Google Admin Console → Gmail → Routing → **"Add rule"**
 - Condición: emails recibidos en `info@caminosdelassierras.com.ar`
-- Acción: **"Also deliver to"** → `caminos@ses.omnibrein.com`
+- Acción: **"Also deliver to"** → `caminos@mail.dev.omnibrein.com`
 
 Esto garantiza que:
 
@@ -107,17 +107,17 @@ Cuando Google reenvía un email, el SPF del remitente original puede fallar (por
 
 La arquitectura escala naturalmente a múltiples tenants sin cambios en infraestructura:
 
-| Tenant                 | Email del tenant                  | Dirección en ses.omnibrein.com | Forwarding                    |
+| Tenant                 | Email del tenant                  | Dirección en mail.dev.omnibrein.com | Forwarding                    |
 | ---------------------- | --------------------------------- | ------------------------------ | ----------------------------- |
-| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@ses.omnibrein.com`    | Google Workspace routing rule |
-| Tenant B               | `contacto@tenantb.com`            | `tenantb@ses.omnibrein.com`    | Según su proveedor de email   |
-| Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@ses.omnibrein.com`    | Según su proveedor de email   |
+| Caminos de las Sierras | `info@caminosdelassierras.com.ar` | `caminos@mail.dev.omnibrein.com`    | Google Workspace routing rule |
+| Tenant B               | `contacto@tenantb.com`            | `tenantb@mail.dev.omnibrein.com`    | Según su proveedor de email   |
+| Tenant C               | `soporte@tenantc.com.ar`          | `tenantc@mail.dev.omnibrein.com`    | Según su proveedor de email   |
 
 **Para agregar un nuevo tenant** al sistema inbound:
 
-1. Asignar una dirección única en `ses.omnibrein.com` (ej: `nuevotenantX@ses.omnibrein.com`)
+1. Asignar una dirección única en `mail.dev.omnibrein.com` (ej: `nuevotenantX@mail.dev.omnibrein.com`)
 2. El tenant configura forwarding desde su email hacia esa dirección
-3. La Receipt Rule existente (para todo `ses.omnibrein.com`) ya cubre la nueva dirección automáticamente
+3. La Receipt Rule existente (para todo `mail.dev.omnibrein.com`) ya cubre la nueva dirección automáticamente
 4. **No se requieren cambios en DNS, ni en SES, ni en las Receipt Rules**
 
 Para outbound (enviar respuestas como `@dominiodelTenant`), sí se requiere verificar el dominio del tenant en SES (ver sección A3).
@@ -132,7 +132,7 @@ Las Receipt Rules se organizan en **Receipt Rule Sets**. Solo un rule set puede 
 
 Cada Receipt Rule tiene:
 
-- **Recipients**: Direcciones de email o dominios a los que aplica la regla (ej: `ses.omnibrein.com` para aceptar todo el subdominio)
+- **Recipients**: Direcciones de email o dominios a los que aplica la regla (ej: `mail.dev.omnibrein.com` para aceptar todo el subdominio)
 - **Actions**: Lista ordenada de acciones a ejecutar (hasta varias por regla)
 - **TLS requirement**: Opción de requerir TLS para conexiones inbound
 - **Spam/virus scanning**: Opción de habilitar escaneo
@@ -201,7 +201,7 @@ Ejemplo para el tenant Caminos de las Sierras (`caminosdelassierras.com.ar`, DNS
 
 | Requisito                               | omnibrein.com (nosotros)                                     | Dominio del tenant                                      |
 | --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-| **Para inbound (recibir)**              | MX + verificación DKIM de `ses.omnibrein.com` (una sola vez) | Solo regla de forwarding (sin cambios DNS)              |
+| **Para inbound (recibir)**              | MX + verificación DKIM de `mail.dev.omnibrein.com` (una sola vez) | Solo regla de forwarding (sin cambios DNS)              |
 | **Para outbound (enviar como @tenant)** | N/A                                                          | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM (5-6 registros) |
 
 ---
@@ -224,6 +224,39 @@ El proceso de verificación por cada nuevo tenant:
 
 **El dominio permanece verificado mientras existan los registros DNS.** Si se eliminan los registros, SES revoca la verificación tras un período.
 
+#### Flujo de envío outbound
+
+Una vez que el dominio del tenant está verificado en SES, el sistema envía respuestas vía SMTP a través de SES **on-behalf-of** la cuenta del tenant — la misma identidad que recibió el email original. El email incluye los headers de threading (`In-Reply-To`, `References`) y `Reply-To` para mantener la continuidad del hilo de conversación.
+
+```mermaid
+flowchart TD
+    Agent["Agente responde
+    desde la UI del sistema"] --> NestJS["NestJS on ECS
+    prepara el email de respuesta"]
+    NestJS --> Build["Construir email con headers:
+    From: info@caminosdelassierras.com.ar
+    Reply-To: info@caminosdelassierras.com.ar
+    In-Reply-To: &lt;original-message-id&gt;
+    References: &lt;thread-message-ids&gt;
+    Subject: Re: asunto original"]
+    Build -->|"Envío SMTP on-behalf-of
+    la cuenta del tenant"| SES["SES Outbound
+    dominio del tenant verificado"]
+    SES -->|"Firma DKIM automática
+    d=caminosdelassierras.com.ar"| Deliver["Email entregado al
+    buzón del usuario final"]
+    Deliver --> Thread["Cliente de correo agrupa
+    en el thread original
+    gracias a In-Reply-To y References"]
+```
+
+**Puntos clave del flujo**:
+
+- **On-behalf-of**: SES envía el email como si fuera el tenant (`From: info@caminosdelassierras.com.ar`), la misma cuenta que recibió el email original.
+- **Thread-ID preservado**: Los headers `In-Reply-To` y `References` aseguran que el cliente de correo del destinatario agrupe la respuesta en el hilo de conversación original.
+- **Reply-To**: Se establece a la dirección del tenant, de modo que si el usuario final responde, el email llega al buzón del tenant y se reenvía a `caminos@mail.dev.omnibrein.com`, cerrando el ciclo.
+- **DKIM automático**: SES firma el email con las claves DKIM del dominio del tenant, pasando validación DMARC.
+
 ---
 
 ### A5. Manejo de Reply-To
@@ -234,9 +267,9 @@ SES otorga **control total** sobre el header `Reply-To`:
 - El header `Reply-To` NO necesita ser una identidad verificada en SES.
 - El header `From` DEBE ser una identidad verificada.
 
-**Caso de uso multi-tenant**: Establecer `From` como `info@caminosdelassierras.com.ar` y `Reply-To` a la misma dirección. Cuando el usuario final responde, el email llega a Google Workspace del tenant, que lo reenvía a `caminos@ses.omnibrein.com`, cerrando el ciclo.
+**Caso de uso multi-tenant**: Establecer `From` como `info@caminosdelassierras.com.ar` y `Reply-To` a la misma dirección. Cuando el usuario final responde, el email llega a Google Workspace del tenant, que lo reenvía a `caminos@mail.dev.omnibrein.com`, cerrando el ciclo.
 
-Alternativamente, se puede usar `Reply-To` como dirección de tracking (ej: `case-12345@ses.omnibrein.com`) para enrutar respuestas directamente al sistema sin depender del forwarding del tenant para las respuestas.
+Alternativamente, se puede usar `Reply-To` como dirección de tracking (ej: `case-12345@mail.dev.omnibrein.com`) para enrutar respuestas directamente al sistema sin depender del forwarding del tenant para las respuestas.
 
 ---
 
@@ -489,7 +522,7 @@ Estimación a mayor escala (10 tenants, 10,000 emails/mes total):
 ```mermaid
 flowchart TD
     Email["Email llega a SES
-    *@ses.omnibrein.com"] --> RR["Receipt Rule"]
+    *@mail.dev.omnibrein.com"] --> RR["Receipt Rule"]
     RR --> S3["S3: raw email
     s3://bucket/emails/tenantId/messageId"]
     RR --> SNS["SNS: notificación"]
@@ -500,7 +533,7 @@ flowchart TD
     identifica tenant por To address"]
 ```
 
-**Identificación del tenant**: El backend identifica a qué tenant pertenece el email inbound analizando el header `To` (ej: `caminos@ses.omnibrein.com` → tenant "Caminos de las Sierras"). Este mapeo se gestiona en la base de datos.
+**Identificación del tenant**: El backend identifica a qué tenant pertenece el email inbound analizando el header `To` (ej: `caminos@mail.dev.omnibrein.com` → tenant "Caminos de las Sierras"). Este mapeo se gestiona en la base de datos.
 
 ### I4. Integración con infraestructura AWS existente
 
@@ -579,7 +612,7 @@ Para agregar un nuevo tenant al sistema:
 flowchart TD
     Start["Nuevo tenant:
     soporte@nuevotenant.com"] --> Step1["1. Asignar dirección inbound
-    nuevotenant@ses.omnibrein.com"]
+    nuevotenant@mail.dev.omnibrein.com"]
     Step1 --> Step2["2. Registrar mapeo en DB
     nuevotenant@ses... -> tenant ID"]
     Step2 --> Step3["3. Verificar dominio del tenant en SES
@@ -589,7 +622,7 @@ flowchart TD
     Step4 --> Step5["5. SES verifica dominio
     minutos a horas"]
     Step5 --> Step6["6. Tenant configura forwarding
-    soporte@nuevotenant.com -> nuevotenant@ses.omnibrein.com"]
+    soporte@nuevotenant.com -> nuevotenant@mail.dev.omnibrein.com"]
     Step6 --> Done["Tenant operativo
     Inbound + Outbound funcionando"]
 ```
@@ -607,14 +640,14 @@ flowchart TD
 
 | Paso                                        | Acción                                        | Frecuencia            |
 | ------------------------------------------- | --------------------------------------------- | --------------------- |
-| Crear dirección `tenantX@ses.omnibrein.com` | Registrar en BD del backend                   | Por cada nuevo tenant |
+| Crear dirección `tenantX@mail.dev.omnibrein.com` | Registrar en BD del backend                   | Por cada nuevo tenant |
 | Iniciar verificación de dominio en SES      | SES Console o API                             | Por cada nuevo tenant |
 | Proporcionar registros DNS al tenant        | Extraer de SES y comunicar al tenant          | Por cada nuevo tenant |
-| Configurar DNS de `ses.omnibrein.com`       | Ya está hecho (MX + DKIM)                     | **Una sola vez**      |
-| Configurar Receipt Rules                    | Ya está hecho (para todo `ses.omnibrein.com`) | **Una sola vez**      |
+| Configurar DNS de `mail.dev.omnibrein.com`       | Ya está hecho (MX + DKIM)                     | **Una sola vez**      |
+| Configurar Receipt Rules                    | Ya está hecho (para todo `mail.dev.omnibrein.com`) | **Una sola vez**      |
 | Configurar pipeline S3/SNS/SQS              | Ya está hecho                                 | **Una sola vez**      |
 
-**Ventaja clave**: La infraestructura base (DNS de `ses.omnibrein.com`, Receipt Rules, pipeline S3/SNS/SQS) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
+**Ventaja clave**: La infraestructura base (DNS de `mail.dev.omnibrein.com`, Receipt Rules, pipeline S3/SNS/SQS) se configura **una sola vez**. Agregar tenants no requiere cambios en infraestructura.
 
 ---
 
@@ -628,10 +661,10 @@ Dadas las restricciones (dominio propio `omnibrein.com`, tenants con Google Work
 flowchart TD
     UserFinal["Usuario final envía email"] --> TenantBox["info@caminosdelassierras.com.ar
     Google Workspace"]
-    TenantBox -->|"Routing rule: Also deliver to"| SESIn["caminos@ses.omnibrein.com
+    TenantBox -->|"Routing rule: Also deliver to"| SESIn["caminos@mail.dev.omnibrein.com
     MX -> SES Inbound us-east-1"]
     SESIn --> RR["SES Receipt Rule
-    ses.omnibrein.com"]
+    mail.dev.omnibrein.com"]
     RR --> S3["S3 Bucket
     s3://bucket/emails/caminos/msgId"]
     RR --> SNS["SNS Topic"]
@@ -683,7 +716,7 @@ flowchart TD
 
 ### Ventajas clave para esta arquitectura
 
-1. **Dominio propio para inbound**: Control total sobre `ses.omnibrein.com`, sin dependencia del DNS del tenant para recepción.
+1. **Dominio propio para inbound**: Control total sobre `mail.dev.omnibrein.com`, sin dependencia del DNS del tenant para recepción.
 2. **Escalabilidad multi-tenant sin cambios de infra**: Agregar un tenant no requiere cambios en DNS, Receipt Rules ni pipeline.
 3. **Ya en AWS**: Integración nativa, auth basada en IAM, no hay API keys que gestionar, misma facturación.
 4. **Extremadamente barato**: Efectivamente gratis a escala POC (y bajo coste a escala de producción).
@@ -709,7 +742,7 @@ flowchart TD
 
 | Característica                     | Amazon SES                               | SendGrid                                            | Notas                               |
 | ---------------------------------- | ---------------------------------------- | --------------------------------------------------- | ----------------------------------- |
-| **Inbound parsing**                | DIY (S3+SNS+SQS) via `ses.omnibrein.com` | Built-in Inbound Parse webhook                      | SendGrid más simple para inbound    |
+| **Inbound parsing**                | DIY (S3+SNS+SQS) via `mail.dev.omnibrein.com` | Built-in Inbound Parse webhook                      | SendGrid más simple para inbound    |
 | **Outbound sending**               | API/SMTP                                 | API/SMTP                                            | Comparable                          |
 | **Setup DKIM**                     | 3 registros CNAME por tenant             | 2 registros CNAME por tenant                        | SES ligeramente más registros DNS   |
 | **Gestión de threads**             | Manual (control total de headers)        | Manual (control total de headers)                   | Mismo esfuerzo                      |
@@ -728,7 +761,7 @@ flowchart TD
 
 | Criterio                                   | Valoración                        | Notas                                                                                    |
 | ------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------- |
-| **¿Puede recibir email inbound?**          | Sí (via `ses.omnibrein.com`)      | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
+| **¿Puede recibir email inbound?**          | Sí (via `mail.dev.omnibrein.com`)      | MX propio, el tenant solo configura forwarding. Sin cambios DNS del tenant para inbound. |
 | **¿Puede enviar como @tenant?**            | Sí (con registros DNS del tenant) | 3 CNAMEs DKIM + MX/TXT Custom MAIL FROM = 5 registros DNS en el DNS del tenant           |
 | **¿Pasa DMARC p=reject?**                  | Sí                                | La alineación DKIM vía Easy DKIM satisface DMARC                                         |
 | **¿Continuidad de thread?**                | Sí (manual)                       | Control total vía headers In-Reply-To/References                                         |
