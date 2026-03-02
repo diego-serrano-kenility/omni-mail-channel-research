@@ -371,20 +371,6 @@ A medida que se acumulan conversaciones sin borrar datos, el almacenamiento S3 c
 | **Costo anual total** | **~$195** |
 | **Costo por mail individual** | $0.0027 |
 
-### Hallazgos Clave
-
-1. **El LLM es el componente dominante en todos los escenarios**: Representa entre el **55%** (larga P99) y el **93%** (estándar P60) del costo total. Es el único componente que escala significativamente con la duración de la conversación.
-
-2. **El almacenamiento S3 es despreciable**: Incluso acumulando storage a lo largo del año, S3 nunca supera el **1%** del costo total mensual. Intelligent Tiering reduce el costo de datos antiguos hasta en un **96%**.
-
-3. **Agregar idas y vueltas es barato en SES**: El costo incremental de SES por cada ida y vuelta adicional (2 mails ≤ 256KB) es solo **$0.00038**, trivial comparado con el incremento del LLM (~**$0.0073** por ida y vuelta).
-
-4. **El tamaño del primer mail solo importa en el top 5%**: Entre P60 y P90 la diferencia es solo **+9%** ($0.0015). Recién a partir de P95 el costo de chunks SES se vuelve significativo (**+49%** vs P60).
-
-5. **A 1,000 conversaciones/mes el costo es extremadamente bajo**: **$16.21/mes** (~$195/año) para atender 1,000 consultas por email con IA, incluyendo almacenamiento persistente de todos los mails recibidos.
-
-6. **El costo por conversación es 100-1000x menor que un agente humano**: A ~$0.016 por conversación estándar, el costo operativo de resolver una consulta por email con IA equivale a menos de 1 segundo de trabajo de un agente humano.
-
 ---
 
 ## Fuentes de Precios
