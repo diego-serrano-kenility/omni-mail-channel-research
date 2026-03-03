@@ -45,9 +45,9 @@
 | Métrica | Gemini | GPT-OSS |
 |---|---|---|
 | **Costo por conversación** | $0.0162 | $0.0060 |
-| **Costo mensual (mes 1)** | **$64.80** | **$24.20** |
-| **Costo mensual (mes 12, con storage acumulado)** | **$66.93** | **$26.33** |
-| **Costo anual total** | **~$790** | **~$303** |
+| **Costo mensual (mes 1)** | **$64.82** | **$24.22** |
+| **Costo mensual (mes 12, con storage acumulado)** | **$67.19** | **$26.59** |
+| **Costo anual total** | **~$792** | **~$305** |
 | **Costo por mail individual** | $0.0027 | $0.0010 |
 
 ### Distribución del costo (caso más común: Estándar P60)
@@ -66,10 +66,10 @@
 |---|---|---|
 | SES (inbound + outbound) | $45.96 | $45.96 |
 | S3 (storage + ops) | ~$15.20 | ~$15.20 |
-| MongoDB Atlas (storage) | ~$4.38 | ~$4.38 |
+| MongoDB Atlas (storage) | ~$6.10 | ~$6.10 |
 | LLM | $724.80 | $237.60 |
-| **Total anual** | **~$790.34** | **~$303.14** |
-| **Promedio mensual** | **~$65.86** | **~$25.26** |
+| **Total anual** | **~$792.06** | **~$304.86** |
+| **Promedio mensual** | **~$66.01** | **~$25.41** |
 
 ---
 
@@ -289,26 +289,26 @@ Además del almacenamiento en S3 (raw emails y partes), se almacena en MongoDB A
 **Costo de storage adicional en MongoDB Atlas**: **~$0.17/GB/mes**
 
 - **Mails salientes**: HTML multipart (tags de estructura, estilos inline, texto; imágenes alojadas en la web) → **~20 KB por mail**
-- **Mails entrantes**: solo el part de texto plano (sin adjuntos, sin HTML) → **~8 KB por mail**
+- **Mails entrantes**: HTML multipart del email (sin adjuntos; imágenes referenciadas externamente) → **~20 KB por mail**
 
 ### 6.1 Volumen por conversación
 
-| Escenario | Salientes (HTML) | Entrantes (texto) | **Total MongoDB** |
+| Escenario | Salientes (HTML) | Entrantes (HTML) | **Total MongoDB** |
 |---|---|---|---|
-| Corta (2 mails) | 1 × 20 KB = 20 KB | 1 × 8 KB = 8 KB | **28 KB** |
-| Estándar (6 mails) | 3 × 20 KB = 60 KB | 3 × 8 KB = 24 KB | **84 KB** |
-| Larga (10 mails) | 5 × 20 KB = 100 KB | 5 × 8 KB = 40 KB | **140 KB** |
+| Corta (2 mails) | 1 × 20 KB = 20 KB | 1 × 20 KB = 20 KB | **40 KB** |
+| Estándar (6 mails) | 3 × 20 KB = 60 KB | 3 × 20 KB = 60 KB | **120 KB** |
+| Larga (10 mails) | 5 × 20 KB = 100 KB | 5 × 20 KB = 100 KB | **200 KB** |
 
 ### 6.2 Costo mensual y acumulado (4,000 conversaciones estándar/mes)
 
 | Mes | Conv. acumuladas | Storage acum. | Costo MongoDB/mes |
 |---|---|---|---|
-| 1 | 4,000 | ~0.33 GB | **$0.06** |
-| 3 | 12,000 | ~0.98 GB | **$0.17** |
-| 6 | 24,000 | ~1.97 GB | **$0.33** |
-| 12 | 48,000 | ~3.94 GB | **$0.67** |
+| 1 | 4,000 | ~0.46 GB | **$0.08** |
+| 3 | 12,000 | ~1.37 GB | **$0.23** |
+| 6 | 24,000 | ~2.75 GB | **$0.47** |
+| 12 | 48,000 | ~5.49 GB | **$0.93** |
 
-> El costo anual total de MongoDB para almacenar el contenido textual de todos los mails es de **~$4.38**.
+> El costo anual total de MongoDB para almacenar el contenido HTML de todos los mails es de **~$6.10**.
 
 ---
 
@@ -324,7 +324,7 @@ Escenario: **4,000 conversaciones estándar (6 mails) con primer mail P60 (≤ 2
 | Total mails/mes | 24,000 (12K in + 12K out) |
 | Objetos S3 nuevos/mes | 48,000 |
 | Storage S3 nuevo/mes | ~6 GB |
-| Storage MongoDB nuevo/mes | ~0.33 GB |
+| Storage MongoDB nuevo/mes | ~0.46 GB |
 
 ### 7.2 Costo mensual desglosado
 
@@ -336,20 +336,20 @@ Escenario: **4,000 conversaciones estándar (6 mails) con primer mail P60 (≤ 2
 | **SES Outbound data** | 2.93 GB × $0.12 | $0.35 | $0.35 |
 | **S3 storage** | 6 GB × $0.023 | $0.14 | $0.14 |
 | **S3 operaciones** | 4,000 × $0.000092 | $0.37 | $0.37 |
-| **MongoDB storage** | 0.33 GB × $0.17 | $0.06 | $0.06 |
+| **MongoDB storage** | 0.46 GB × $0.17 | $0.08 | $0.08 |
 | **SNS** | Free tier | $0.00 | $0.00 |
 | **LLM** | 4,000 × costo/conv | $60.40 | $19.80 |
 | | | | |
-| **TOTAL MES** | | **$64.80** | **$24.20** |
+| **TOTAL MES** | | **$64.82** | **$24.22** |
 
 ### 7.3 Evolución mensual con storage acumulado
 
 | Mes | SES | S3 | MongoDB | LLM Gemini | **Total Gemini** | LLM GPT-OSS | **Total GPT-OSS** |
 |---|---|---|---|---|---|---|---|
-| 1 | $3.83 | $0.51 | $0.06 | $60.40 | **$64.80** | $19.80 | **$24.20** |
-| 3 | $3.83 | $0.78 | $0.17 | $60.40 | **$65.18** | $19.80 | **$24.58** |
-| 6 | $3.83 | $1.20 | $0.33 | $60.40 | **$65.76** | $19.80 | **$25.16** |
-| 12 | $3.83 | $2.03 | $0.67 | $60.40 | **$66.93** | $19.80 | **$26.33** |
+| 1 | $3.83 | $0.51 | $0.08 | $60.40 | **$64.82** | $19.80 | **$24.22** |
+| 3 | $3.83 | $0.78 | $0.23 | $60.40 | **$65.24** | $19.80 | **$24.64** |
+| 6 | $3.83 | $1.20 | $0.47 | $60.40 | **$65.90** | $19.80 | **$25.30** |
+| 12 | $3.83 | $2.03 | $0.93 | $60.40 | **$67.19** | $19.80 | **$26.59** |
 
 ### 7.4 Evolución del storage S3 acumulado
 
