@@ -1,14 +1,81 @@
 # Análisis de Costo por Conversación - Estrategia Amazon SES
 
-> **Fecha**: 2026-03-02
+> **Fecha**: 2026-03-03
 >
-> **Objetivo**: Estimar el costo total de cada conversación de email utilizando Amazon SES como estrategia de recepción/envío, S3 Standard para almacenamiento, y un LLM para interpretación y respuesta automática. Se analizan tres escenarios de duración de conversación y cuatro rangos de tamaño del primer mail.
+> **Objetivo**: Estimar el costo total de cada conversación de email utilizando Amazon SES como estrategia de recepción/envío, S3 Standard para almacenamiento, y un LLM para interpretación y respuesta automática. Se analizan tres escenarios de duración de conversación, cuatro rangos de tamaño del primer mail, y dos modelos de LLM.
 
 ---
 
-## 1. Supuestos Generales
+## Índice
 
-### 1.1 Escenarios de Duración de Conversación
+1. [Resumen Ejecutivo](#1-resumen-ejecutivo)
+2. [Supuestos y Parámetros](#2-supuestos-y-parámetros)
+3. [Detalle: Amazon SES](#3-detalle-amazon-ses)
+4. [Detalle: Amazon S3](#4-detalle-amazon-s3)
+5. [Detalle: LLM](#5-detalle-llm)
+6. [Detalle: MongoDB Atlas](#6-detalle-mongodb-atlas)
+7. [Estimación Mensual y Anual (4,000 conv/mes)](#7-estimación-mensual-y-anual-4000-convmes)
+8. [Nota: S3 Intelligent Tiering vs Standard](#8-nota-s3-intelligent-tiering-vs-standard)
+9. [Fuentes de Precios](#9-fuentes-de-precios)
+
+---
+
+## 1. Resumen Ejecutivo
+
+### Costo por conversación según duración y tamaño
+
+**Con Gemini** ($0.30/1M input, $2.50/1M output):
+
+| Duración \ Tamaño | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
+|---|---|---|---|---|
+| **Corta (2 mails)** | **$0.0082** | $0.0097 | $0.0162 | $0.0243 |
+| **Estándar (6 mails)** | **$0.0162** | $0.0177 | $0.0242 | $0.0323 |
+| **Larga (10 mails)** | **$0.0242** | $0.0257 | $0.0322 | $0.0403 |
+
+**Con GPT-OSS** ($0.15/1M input, $0.60/1M output):
+
+| Duración \ Tamaño | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
+|---|---|---|---|---|
+| **Corta (2 mails)** | **$0.0034** | $0.0049 | $0.0114 | $0.0195 |
+| **Estándar (6 mails)** | **$0.0060** | $0.0076 | $0.0140 | $0.0221 |
+| **Larga (10 mails)** | **$0.0087** | $0.0102 | $0.0167 | $0.0248 |
+
+### Proyección mensual y anual (4,000 conversaciones estándar P60)
+
+| Métrica | Gemini | GPT-OSS |
+|---|---|---|
+| **Costo por conversación** | $0.0162 | $0.0060 |
+| **Costo mensual (mes 1)** | **$64.80** | **$24.20** |
+| **Costo mensual (mes 12, con storage acumulado)** | **$66.93** | **$26.33** |
+| **Costo anual total** | **~$790** | **~$303** |
+| **Costo por mail individual** | $0.0027 | $0.0010 |
+
+### Distribución del costo (caso más común: Estándar P60)
+
+| Componente | Gemini | % | GPT-OSS | % |
+|---|---|---|---|---|
+| LLM | $0.015100 | 93.3% | $0.004950 | 82.0% |
+| SES Inbound | $0.000570 | 3.5% | $0.000570 | 9.4% |
+| SES Outbound | $0.000390 | 2.4% | $0.000390 | 6.5% |
+| S3 | $0.000126 | 0.8% | $0.000126 | 2.1% |
+| **Total** | **$0.016186** | **100%** | **$0.006036** | **100%** |
+
+### Costo anual desglosado (4,000 conv/mes)
+
+| Concepto | Gemini | GPT-OSS |
+|---|---|---|
+| SES (inbound + outbound) | $45.96 | $45.96 |
+| S3 (storage + ops) | ~$15.20 | ~$15.20 |
+| MongoDB Atlas (storage) | ~$4.38 | ~$4.38 |
+| LLM | $724.80 | $237.60 |
+| **Total anual** | **~$790.34** | **~$303.14** |
+| **Promedio mensual** | **~$65.86** | **~$25.26** |
+
+---
+
+## 2. Supuestos y Parámetros
+
+### 2.1 Escenarios de Duración de Conversación
 
 | Escenario | Mails totales | Inbound | Outbound | Descripción |
 |---|---|---|---|---|
@@ -21,7 +88,7 @@
 - Todos los demás mails (entrantes posteriores y salientes) pesan **≤ 256 KB**
 - Los mails **salientes no se almacenan** en S3 (solo pagan fee SES outbound)
 
-### 1.2 Distribución de Tamaño del Primer Mail Entrante
+### 2.2 Distribución de Tamaño del Primer Mail Entrante
 
 | Percentil | Tamaño máximo | Chunks SES (256 KB c/u) |
 |---|---|---|
@@ -30,54 +97,38 @@
 | **P95** (91%-95%) | ≤ 20 MB | 80 |
 | **P99** (96%-99%) | ≤ 40 MB | 160 |
 
-### 1.3 Estrategia de Almacenamiento S3
+### 2.3 Estrategia de Almacenamiento S3
 
 - Cada mail inbound se almacena como **raw email** (depositado por SES)
 - El raw email se **mueve a otro prefix** (COPY + DELETE)
 - Cada **part del mail** se almacena como objeto independiente
 - Partes por email: **2 a 5** (promedio estimado: **3 partes**)
 - Total de objetos por email inbound: **1 (raw) + 3 (partes) = 4 objetos**
+
 | Escenario | Emails almacenados | Objetos S3 |
 |---|---|---|
 | Corta (2 mails) | 1 inbound | 4 |
 | Estándar (6 mails) | 3 inbound | 12 |
 | Larga (10 mails) | 5 inbound | 20 |
 
-### 1.4 Storage Class: S3 Standard
+### 2.4 Modelos LLM Evaluados
 
-| Concepto | Precio |
-|---|---|
-| **Almacenamiento** | $0.023/GB/mes (primeros 50 TB) |
-| **PUT/COPY/POST/LIST** | $0.005/1,000 requests |
-| **GET/SELECT** | $0.0004/1,000 requests |
-
-> Se utiliza S3 Standard como base de cálculo para establecer el **techo máximo de costo**. El precio de almacenamiento es fijo independientemente del patrón de acceso. No tiene cargos de monitoring ni tarifas adicionales por objeto.
-
-### 1.5 Costos LLM por Escenario
-
-Las tasas por token se derivan del caso estándar: **$0.30/1M input tokens** y **$2.50/1M output tokens**.
-
-| Concepto | Corta (2 mails) | Estándar (6 mails) | Larga (10 mails) |
-|---|---|---|---|
-| **Input**: prompt inicial | 14,000 | 14,000 | 14,000 |
-| **Input**: consultas entrantes | 1 × 1,000 = 1,000 | 3 × 1,000 = 3,000 | 5 × 1,000 = 5,000 |
-| **Total input tokens** | 15,000 | 17,000 | 19,000 |
-| **Costo input** | $0.0045 | $0.0051 | $0.0057 |
-| **Output tokens** (respuestas) | ~1,333 | 4,000 | ~6,667 |
-| **Costo output** | $0.0033 | $0.0100 | $0.0167 |
-| **Total LLM** | **$0.0078** | **$0.0151** | **$0.0224** |
+| Modelo | Input /1M tokens | Output /1M tokens |
+|---|---|---|
+| **Gemini** | $0.30 | $2.50 |
+| **OpenAI gpt-oss-safeguard-120b** | $0.15 | $0.60 |
 
 ---
 
-## 2. Desglose de Costos por Componente
+## 3. Detalle: Amazon SES
 
-### 2.1 Amazon SES - Recepción (Inbound)
+### 3.1 Recepción (Inbound)
 
 **Tarifa base**: $0.10 / 1,000 emails = **$0.0001 por email**
 
 **Tarifa por chunks**: $0.09 / 1,000 chunks = **$0.00009 por chunk** (cada 256 KB)
 
-#### Conversación Corta (2 mails: 1 inbound)
+#### Conversación Corta (1 inbound)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
@@ -86,7 +137,7 @@ Las tasas por token se derivan del caso estándar: **$0.30/1M input tokens** y *
 | Costo chunks | $0.000090 | $0.001440 | $0.007200 | $0.014400 |
 | **Total SES inbound** | **$0.000190** | **$0.001540** | **$0.007300** | **$0.014500** |
 
-#### Conversación Estándar (6 mails: 3 inbound)
+#### Conversación Estándar (3 inbound)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
@@ -95,7 +146,7 @@ Las tasas por token se derivan del caso estándar: **$0.30/1M input tokens** y *
 | Costo chunks | $0.000270 | $0.001620 | $0.007380 | $0.014580 |
 | **Total SES inbound** | **$0.000570** | **$0.001920** | **$0.007680** | **$0.014880** |
 
-#### Conversación Larga (10 mails: 5 inbound)
+#### Conversación Larga (5 inbound)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
@@ -104,7 +155,7 @@ Las tasas por token se derivan del caso estándar: **$0.30/1M input tokens** y *
 | Costo chunks | $0.000450 | $0.001800 | $0.007560 | $0.014760 |
 | **Total SES inbound** | **$0.000950** | **$0.002300** | **$0.008060** | **$0.015260** |
 
-### 2.2 Amazon SES - Envío (Outbound)
+### 3.2 Envío (Outbound)
 
 **Tarifa base**: $0.10 / 1,000 emails = **$0.0001 por email**
 
@@ -116,38 +167,31 @@ Las tasas por token se derivan del caso estándar: **$0.30/1M input tokens** y *
 | Estándar (6 mails) | 3 | $0.000300 | $0.000090 | **$0.000390** |
 | Larga (10 mails) | 5 | $0.000500 | $0.000146 | **$0.000646** |
 
-### 2.3 Amazon S3 - Almacenamiento
+### 3.3 SNS - Notificaciones
 
-#### Volumen almacenado por conversación
+| Concepto | Costo |
+|---|---|
+| Notificaciones SNS | **$0.00** (free tier: primer 1M requests/mes) |
 
-El almacenamiento total incluye el raw email original más las partes extraídas. El volumen total es aproximadamente **2× el tamaño del raw email** (se conserva tanto el raw como las partes descompuestas).
+---
 
-**Conversación Corta (1 email almacenado):**
+## 4. Detalle: Amazon S3
 
-| Componente | P60 | P90 | P95 | P99 |
-|---|---|---|---|---|
-| Email 1° (raw + partes) | 512 KB | 8 MB | 40 MB | 80 MB |
-| **Total en GB** | 0.00050 | 0.00781 | 0.03906 | 0.07813 |
+**Storage class**: S3 Standard — **$0.023/GB/mes** (precio fijo, sin reducción por antigüedad)
 
-**Conversación Estándar (3 emails almacenados):**
+> Se utiliza S3 Standard como base de cálculo para establecer el **techo máximo de costo**. No tiene cargos de monitoring ni tarifas adicionales por objeto. Ver [sección 8](#8-nota-s3-intelligent-tiering-vs-standard) para comparativa con Intelligent Tiering.
 
-| Componente | P60 | P90 | P95 | P99 |
-|---|---|---|---|---|
-| Email 1° (raw + partes) | 512 KB | 8 MB | 40 MB | 80 MB |
-| Emails 2° y 3° (raw + partes) | 1 MB | 1 MB | 1 MB | 1 MB |
-| **Total** | 1.5 MB | 9 MB | 41 MB | 81 MB |
-| **Total en GB** | 0.00146 | 0.00879 | 0.04004 | 0.07910 |
+### 4.1 Volumen almacenado por conversación
 
-**Conversación Larga (5 emails almacenados):**
+El almacenamiento total es aproximadamente **2× el tamaño del raw email** (se conserva tanto el raw como las partes descompuestas).
 
-| Componente | P60 | P90 | P95 | P99 |
-|---|---|---|---|---|
-| Email 1° (raw + partes) | 512 KB | 8 MB | 40 MB | 80 MB |
-| Emails 2°-5° (raw + partes) | 2 MB | 2 MB | 2 MB | 2 MB |
-| **Total** | 2.5 MB | 10 MB | 42 MB | 82 MB |
-| **Total en GB** | 0.00244 | 0.00977 | 0.04102 | 0.08008 |
+| Escenario | Componente | P60 | P90 | P95 | P99 |
+|---|---|---|---|---|---|
+| **Corta** | Email 1° (raw + partes) | 512 KB | 8 MB | 40 MB | 80 MB |
+| **Estándar** | Email 1° + emails 2°-3° | 1.5 MB | 9 MB | 41 MB | 81 MB |
+| **Larga** | Email 1° + emails 2°-5° | 2.5 MB | 10 MB | 42 MB | 82 MB |
 
-#### Costo de almacenamiento (S3 Standard $0.023/GB/mes)
+### 4.2 Costo de almacenamiento por conversación
 
 | Percentil | Corta (1 email) | Estándar (3 emails) | Larga (5 emails) |
 |---|---|---|---|
@@ -156,9 +200,7 @@ El almacenamiento total incluye el raw email original más las partes extraídas
 | P95 | $0.000898 | $0.000921 | $0.000943 |
 | P99 | $0.001797 | $0.001819 | $0.001842 |
 
-> Este costo se repite **cada mes** mientras los objetos permanezcan almacenados, sin reducción por antigüedad.
-
-#### Costo de operaciones S3
+### 4.3 Costo de operaciones S3
 
 | Escenario | PUTs | GETs | DELETEs | **Costo ops** |
 |---|---|---|---|---|
@@ -168,169 +210,162 @@ El almacenamiento total incluye el raw email original más las partes extraídas
 
 > Precios: PUT/COPY/DELETE = $0.005/1K ($0.000005 c/u), GET = $0.0004/1K ($0.0000004 c/u)
 
-#### Total S3 por conversación (primer mes)
+### 4.4 Total S3 por conversación
 
-| Escenario | Componente | P60 | P90 | P95 | P99 |
-|---|---|---|---|---|---|
-| **Corta** | Storage + Ops | **$0.000043** | **$0.000211** | **$0.000929** | **$0.001828** |
-| **Estándar** | Storage + Ops | **$0.000126** | **$0.000294** | **$0.001013** | **$0.001911** |
-| **Larga** | Storage + Ops | **$0.000210** | **$0.000379** | **$0.001097** | **$0.001996** |
-
-### 2.4 Amazon SNS - Notificaciones
-
-| Concepto | Costo |
-|---|---|
-| Notificaciones SNS | **$0.00** (free tier: primer 1M requests/mes) |
-
-### 2.5 LLM - Procesamiento de Lenguaje Natural
-
-| Escenario | Input tokens | Output tokens | Costo input | Costo output | **Total LLM** |
-|---|---|---|---|---|---|
-| **Corta** (1 ida y vuelta) | 15,000 | ~1,333 | $0.0045 | $0.0033 | **$0.0078** |
-| **Estándar** (3 idas y vueltas) | 17,000 | 4,000 | $0.0051 | $0.0100 | **$0.0151** |
-| **Larga** (5 idas y vueltas) | 19,000 | ~6,667 | $0.0057 | $0.0167 | **$0.0224** |
+| Escenario | P60 | P90 | P95 | P99 |
+|---|---|---|---|---|
+| **Corta** | **$0.000043** | **$0.000211** | **$0.000929** | **$0.001828** |
+| **Estándar** | **$0.000126** | **$0.000294** | **$0.001013** | **$0.001911** |
+| **Larga** | **$0.000210** | **$0.000379** | **$0.001097** | **$0.001996** |
 
 ---
 
-## 3. Costo Total por Conversación
+## 5. Detalle: LLM
 
-### 3.1 Conversación Corta (2 mails)
+### 5.1 Tokens por escenario
+
+| Concepto | Corta (2 mails) | Estándar (6 mails) | Larga (10 mails) |
+|---|---|---|---|
+| **Input**: prompt inicial | 14,000 | 14,000 | 14,000 |
+| **Input**: consultas entrantes | 1 × 1,000 | 3 × 1,000 | 5 × 1,000 |
+| **Total input tokens** | 15,000 | 17,000 | 19,000 |
+| **Output tokens** | ~1,333 | 4,000 | ~6,667 |
+
+### 5.2 Costo por modelo y escenario
+
+| Modelo | Concepto | Corta | Estándar | Larga |
+|---|---|---|---|---|
+| **Gemini** | Input | $0.0045 | $0.0051 | $0.0057 |
+| | Output | $0.0033 | $0.0100 | $0.0167 |
+| | **Total** | **$0.0078** | **$0.0151** | **$0.0224** |
+| **GPT-OSS** | Input | $0.00225 | $0.00255 | $0.00285 |
+| | Output | $0.0008 | $0.0024 | $0.004 |
+| | **Total** | **$0.00305** | **$0.00495** | **$0.00685** |
+
+### 5.3 Costo total por conversación (todos los componentes)
+
+#### Conversación Corta (2 mails)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
 | SES Inbound | $0.000190 | $0.001540 | $0.007300 | $0.014500 |
 | SES Outbound | $0.000130 | $0.000130 | $0.000130 | $0.000130 |
 | S3 | $0.000043 | $0.000211 | $0.000929 | $0.001828 |
-| LLM | $0.007800 | $0.007800 | $0.007800 | $0.007800 |
-| **TOTAL** | **$0.008163** | **$0.009681** | **$0.016159** | **$0.024258** |
+| LLM Gemini | $0.007800 | $0.007800 | $0.007800 | $0.007800 |
+| LLM GPT-OSS | $0.003050 | $0.003050 | $0.003050 | $0.003050 |
+| **TOTAL (Gemini)** | **$0.008163** | **$0.009681** | **$0.016159** | **$0.024258** |
+| **TOTAL (GPT-OSS)** | **$0.003413** | **$0.004931** | **$0.011409** | **$0.019508** |
 
-### 3.2 Conversación Estándar (6 mails)
+#### Conversación Estándar (6 mails)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
 | SES Inbound | $0.000570 | $0.001920 | $0.007680 | $0.014880 |
 | SES Outbound | $0.000390 | $0.000390 | $0.000390 | $0.000390 |
 | S3 | $0.000126 | $0.000294 | $0.001013 | $0.001911 |
-| LLM | $0.015100 | $0.015100 | $0.015100 | $0.015100 |
-| **TOTAL** | **$0.016186** | **$0.017704** | **$0.024183** | **$0.032281** |
+| LLM Gemini | $0.015100 | $0.015100 | $0.015100 | $0.015100 |
+| LLM GPT-OSS | $0.004950 | $0.004950 | $0.004950 | $0.004950 |
+| **TOTAL (Gemini)** | **$0.016186** | **$0.017704** | **$0.024183** | **$0.032281** |
+| **TOTAL (GPT-OSS)** | **$0.006036** | **$0.007554** | **$0.014033** | **$0.022131** |
 
-### 3.3 Conversación Larga (10 mails)
+#### Conversación Larga (10 mails)
 
 | Componente | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
 |---|---|---|---|---|
 | SES Inbound | $0.000950 | $0.002300 | $0.008060 | $0.015260 |
 | SES Outbound | $0.000646 | $0.000646 | $0.000646 | $0.000646 |
 | S3 | $0.000210 | $0.000379 | $0.001097 | $0.001996 |
-| LLM | $0.022400 | $0.022400 | $0.022400 | $0.022400 |
-| **TOTAL** | **$0.024206** | **$0.025725** | **$0.032203** | **$0.040302** |
-
-### 3.4 Comparativa Cruzada: Duración × Tamaño
-
-| | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
-|---|---|---|---|---|
-| **Corta (2 mails)** | $0.0082 | $0.0097 | $0.0162 | $0.0243 |
-| **Estándar (6 mails)** | $0.0162 | $0.0177 | $0.0242 | $0.0323 |
-| **Larga (10 mails)** | $0.0242 | $0.0257 | $0.0322 | $0.0403 |
-
-> El incremento de costo entre la conversación corta y la larga en P60 es de **$0.016** (+197%), dominado casi en su totalidad por el LLM. El incremento entre P60 y P99 dentro de una misma duración es de **$0.016** (+197% para corta, +99% para estándar, +66% para larga), dominado por los chunks de SES.
-
-### 3.5 Distribución porcentual del costo (caso más común: Estándar P60)
-
-| Componente | Costo | % del total |
-|---|---|---|
-| LLM | $0.015100 | 93.3% |
-| SES Inbound | $0.000570 | 3.5% |
-| SES Outbound | $0.000390 | 2.4% |
-| S3 | $0.000126 | 0.8% |
-| **Total** | **$0.016186** | **100%** |
-
-### 3.6 Distribución porcentual del costo (caso extremo: Larga P99)
-
-| Componente | Costo | % del total |
-|---|---|---|
-| LLM | $0.022400 | 55.6% |
-| SES Inbound | $0.015260 | 37.8% |
-| S3 | $0.001996 | 5.0% |
-| SES Outbound | $0.000646 | 1.6% |
-| **Total** | **$0.040302** | **100%** |
+| LLM Gemini | $0.022400 | $0.022400 | $0.022400 | $0.022400 |
+| LLM GPT-OSS | $0.006850 | $0.006850 | $0.006850 | $0.006850 |
+| **TOTAL (Gemini)** | **$0.024206** | **$0.025725** | **$0.032203** | **$0.040302** |
+| **TOTAL (GPT-OSS)** | **$0.008656** | **$0.010175** | **$0.016653** | **$0.024752** |
 
 ---
 
-## 4. Estimación Mensual: 1,000 Conversaciones (P60, 6 mails)
+## 6. Detalle: MongoDB Atlas
 
-### 4.1 Supuestos del escenario mensual
+Además del almacenamiento en S3 (raw emails y partes), se almacena en MongoDB Atlas el contenido textual de los mails para consulta y gestión.
+
+**Costo de storage adicional en MongoDB Atlas**: **~$0.17/GB/mes**
+
+- **Mails salientes**: HTML multipart (tags de estructura, estilos inline, texto; imágenes alojadas en la web) → **~20 KB por mail**
+- **Mails entrantes**: solo el part de texto plano (sin adjuntos, sin HTML) → **~8 KB por mail**
+
+### 6.1 Volumen por conversación
+
+| Escenario | Salientes (HTML) | Entrantes (texto) | **Total MongoDB** |
+|---|---|---|---|
+| Corta (2 mails) | 1 × 20 KB = 20 KB | 1 × 8 KB = 8 KB | **28 KB** |
+| Estándar (6 mails) | 3 × 20 KB = 60 KB | 3 × 8 KB = 24 KB | **84 KB** |
+| Larga (10 mails) | 5 × 20 KB = 100 KB | 5 × 8 KB = 40 KB | **140 KB** |
+
+### 6.2 Costo mensual y acumulado (4,000 conversaciones estándar/mes)
+
+| Mes | Conv. acumuladas | Storage acum. | Costo MongoDB/mes |
+|---|---|---|---|
+| 1 | 4,000 | ~0.33 GB | **$0.06** |
+| 3 | 12,000 | ~0.98 GB | **$0.17** |
+| 6 | 24,000 | ~1.97 GB | **$0.33** |
+| 12 | 48,000 | ~3.94 GB | **$0.67** |
+
+> El costo anual total de MongoDB para almacenar el contenido textual de todos los mails es de **~$4.38**.
+
+---
+
+## 7. Estimación Mensual y Anual (4,000 conv/mes)
+
+Escenario: **4,000 conversaciones estándar (6 mails) con primer mail P60 (≤ 256 KB)**.
+
+### 7.1 Parámetros
 
 | Parámetro | Valor |
 |---|---|
-| Conversaciones por mes | 1,000 |
-| Tamaño del primer mail | P60 (≤ 256 KB) |
-| Duración de conversación | Estándar (6 mails = 3 in + 3 out) |
-| Total mails inbound/mes | 3,000 |
-| Total mails outbound/mes | 3,000 |
-| Total mails/mes | 6,000 |
-| Total objetos S3 nuevos/mes | 12,000 (12 por conversación) |
-| Storage nuevo/mes | ~1.5 GB (1.5 MB × 1,000 conversaciones) |
+| Conversaciones por mes | 4,000 |
+| Total mails/mes | 24,000 (12K in + 12K out) |
+| Objetos S3 nuevos/mes | 48,000 |
+| Storage S3 nuevo/mes | ~6 GB |
+| Storage MongoDB nuevo/mes | ~0.33 GB |
 
-### 4.2 Costo mensual desglosado
+### 7.2 Costo mensual desglosado
 
-| Componente | Cálculo | Costo/mes |
-|---|---|---|
-| **SES Inbound base** | 3,000 emails × $0.0001 | $0.30 |
-| **SES Inbound chunks** | 3,000 chunks × $0.00009 | $0.27 |
-| **SES Outbound base** | 3,000 emails × $0.0001 | $0.30 |
-| **SES Outbound data** | 3,000 × 256KB = 0.73GB × $0.12 | $0.09 |
-| **S3 storage (mes corriente)** | 1.5 GB × $0.023 | $0.03 |
-| **S3 operaciones** | 1,000 × $0.000092 | $0.09 |
-| **SNS** | Free tier | $0.00 |
-| **LLM** | 1,000 × $0.0151 | $15.10 |
-| | | |
-| **TOTAL MES** | | **$16.18** |
+| Componente | Cálculo | Gemini | GPT-OSS |
+|---|---|---|---|
+| **SES Inbound base** | 12,000 emails × $0.0001 | $1.20 | $1.20 |
+| **SES Inbound chunks** | 12,000 chunks × $0.00009 | $1.08 | $1.08 |
+| **SES Outbound base** | 12,000 emails × $0.0001 | $1.20 | $1.20 |
+| **SES Outbound data** | 2.93 GB × $0.12 | $0.35 | $0.35 |
+| **S3 storage** | 6 GB × $0.023 | $0.14 | $0.14 |
+| **S3 operaciones** | 4,000 × $0.000092 | $0.37 | $0.37 |
+| **MongoDB storage** | 0.33 GB × $0.17 | $0.06 | $0.06 |
+| **SNS** | Free tier | $0.00 | $0.00 |
+| **LLM** | 4,000 × costo/conv | $60.40 | $19.80 |
+| | | | |
+| **TOTAL MES** | | **$64.80** | **$24.20** |
 
-### 4.3 Distribución del costo mensual
+### 7.3 Evolución mensual con storage acumulado
 
-| Componente | Costo/mes | % |
-|---|---|---|
-| **LLM** | $15.10 | 93.3% |
-| **SES (inbound + outbound)** | $0.96 | 5.9% |
-| **S3 (storage + ops)** | $0.12 | 0.7% |
-| **Total** | **$16.18** | **100%** |
+| Mes | SES | S3 | MongoDB | LLM Gemini | **Total Gemini** | LLM GPT-OSS | **Total GPT-OSS** |
+|---|---|---|---|---|---|---|---|
+| 1 | $3.83 | $0.51 | $0.06 | $60.40 | **$64.80** | $19.80 | **$24.20** |
+| 3 | $3.83 | $0.78 | $0.17 | $60.40 | **$65.18** | $19.80 | **$24.58** |
+| 6 | $3.83 | $1.20 | $0.33 | $60.40 | **$65.76** | $19.80 | **$25.16** |
+| 12 | $3.83 | $2.03 | $0.67 | $60.40 | **$66.93** | $19.80 | **$26.33** |
 
-### 4.4 Evolución del costo S3 acumulado a lo largo del tiempo
-
-Con S3 Standard, el almacenamiento acumulado crece linealmente y el precio por GB se mantiene fijo en $0.023. No hay reducción automática para datos antiguos:
+### 7.4 Evolución del storage S3 acumulado
 
 | Mes | Conv. acumuladas | Storage acum. | Costo S3 storage/mes | Costo S3 ops/mes | **Total S3/mes** |
 |---|---|---|---|---|---|
-| 1 | 1,000 | 1.5 GB | $0.03 | $0.09 | **$0.12** |
-| 2 | 2,000 | 3.0 GB | $0.07 | $0.09 | **$0.16** |
-| 3 | 3,000 | 4.5 GB | $0.10 | $0.09 | **$0.19** |
-| 6 | 6,000 | 9.0 GB | $0.21 | $0.09 | **$0.30** |
-| 12 | 12,000 | 18.0 GB | $0.41 | $0.09 | **$0.50** |
+| 1 | 4,000 | 6 GB | $0.14 | $0.37 | **$0.51** |
+| 2 | 8,000 | 12 GB | $0.28 | $0.37 | **$0.65** |
+| 3 | 12,000 | 18 GB | $0.41 | $0.37 | **$0.78** |
+| 6 | 24,000 | 36 GB | $0.83 | $0.37 | **$1.20** |
+| 12 | 48,000 | 72 GB | $1.66 | $0.37 | **$2.03** |
 
-> Con S3 Standard el costo de storage crece linealmente: **+$0.03/mes** por cada mes de acumulación. Aun en el mes 12 con 18 GB acumulados, S3 representa solo el **2.9%** del costo total mensual.
+---
 
-### 4.5 Costo total mensual proyectado (incluyendo storage acumulado)
+## 8. Nota: S3 Intelligent Tiering vs Standard
 
-| Mes | SES | S3 (todo) | LLM | **Total/mes** |
-|---|---|---|---|---|
-| 1 | $0.96 | $0.12 | $15.10 | **$16.18** |
-| 3 | $0.96 | $0.19 | $15.10 | **$16.25** |
-| 6 | $0.96 | $0.30 | $15.10 | **$16.36** |
-| 12 | $0.96 | $0.50 | $15.10 | **$16.56** |
-
-### 4.6 Costo anual total (12 meses a 1,000 conv/mes)
-
-| Concepto | Costo anual |
-|---|---|
-| SES (inbound + outbound) | $11.52 |
-| S3 (storage + ops) | ~$3.77 |
-| LLM | $181.20 |
-| **Total anual** | **~$196.49** |
-| **Promedio mensual** | **~$16.37** |
-
-### 4.7 Nota: Ahorro potencial con S3 Intelligent Tiering
-
-Si se utiliza **S3 Intelligent Tiering** en lugar de S3 Standard, los objetos que no se acceden migran automáticamente a capas más baratas. Dado que solo el ~1% de los mails se consultan pasados los 30 días, la mayoría de los datos se beneficiaría de esta migración:
+Si se utiliza **S3 Intelligent Tiering** en lugar de S3 Standard, los objetos que no se acceden migran automáticamente a capas más baratas:
 
 | Capa | Condición | Precio/GB/mes | Ahorro vs Standard |
 |---|---|---|---|
@@ -343,38 +378,18 @@ Sin embargo, Intelligent Tiering cobra un **fee de monitoring de $0.0025/1,000 o
 
 | Mes | Objetos acumulados | Monitoring/mes | Storage IT/mes | **Total IT/mes** | **Total Standard/mes** |
 |---|---|---|---|---|---|
-| 1 | 12,000 | $0.03 | $0.03 | **$0.15** | **$0.12** |
-| 6 | 72,000 | $0.18 | $0.08 | **$0.35** | **$0.30** |
-| 12 | 144,000 | $0.36 | $0.08 | **$0.53** | **$0.50** |
+| 1 | 48,000 | $0.12 | $0.14 | **$0.63** | **$0.51** |
+| 6 | 288,000 | $0.72 | $0.36 | **$1.45** | **$1.20** |
+| 12 | 576,000 | $1.44 | $0.40 | **$2.21** | **$2.03** |
 
-> Para este patrón de uso (muchos objetos pequeños, ~125 KB promedio por objeto), el fee de monitoring de Intelligent Tiering compensa parcialmente el ahorro en storage. La diferencia entre ambas opciones es marginal (~$0.03/mes en el peor caso). **Ambas opciones son viables**, ya que S3 nunca supera el 3% del costo total mensual independientemente de la storage class elegida.
-
----
-
-## 5. Conclusiones
-
-### Costo total estimado por conversación según duración y tamaño
-
-| Duración \ Tamaño | P60 (≤256KB) | P90 (≤4MB) | P95 (≤20MB) | P99 (≤40MB) |
-|---|---|---|---|---|
-| **Corta (2 mails)** | **$0.0082** | $0.0097 | $0.0162 | $0.0243 |
-| **Estándar (6 mails)** | **$0.0162** | $0.0177 | $0.0242 | $0.0323 |
-| **Larga (10 mails)** | **$0.0242** | $0.0257 | $0.0322 | $0.0403 |
-
-### Costo mensual para 1,000 conversaciones estándar (P60)
-
-| Métrica | Valor |
-|---|---|
-| **Costo por conversación** | $0.0162 |
-| **Costo mensual (mes 1)** | **$16.18** |
-| **Costo mensual (mes 12, con storage acumulado)** | **$16.56** |
-| **Costo anual total** | **~$196** |
-| **Costo por mail individual** | $0.0027 |
+> Para este patrón de uso (muchos objetos pequeños, ~125 KB promedio por objeto), **Intelligent Tiering resulta más caro que S3 Standard** debido a que el fee de monitoring acumulado supera el ahorro en storage. **S3 Standard es la opción recomendada**.
 
 ---
 
-## Fuentes de Precios
+## 9. Fuentes de Precios
 
 - [Amazon SES Pricing](https://aws.amazon.com/ses/pricing/) — Inbound: $0.10/1K emails + $0.09/1K chunks; Outbound: $0.10/1K emails + $0.12/GB data
 - [Amazon S3 Pricing](https://aws.amazon.com/s3/pricing/) — Standard: $0.023/GB; PUT: $0.005/1K; GET: $0.0004/1K
-- [S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) — Referencia para nota comparativa: monitoring $0.0025/1K objetos/mes, sin cargos de retrieval
+- [S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) — Monitoring: $0.0025/1K objetos/mes, sin cargos de retrieval
+- [OpenAI Pricing](https://openai.com/api/pricing/) — gpt-oss-safeguard-120b: $0.15/1M input, $0.60/1M output
+- [MongoDB Atlas Pricing](https://www.mongodb.com/pricing) — Storage adicional: ~$0.17/GB/mes
